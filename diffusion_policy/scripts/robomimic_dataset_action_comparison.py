@@ -13,6 +13,7 @@ import h5py
 import numpy as np
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation
+import pdb 
 
 def read_all_actions(hdf5_file, metric_skip_steps=1):
     n_demos = len(hdf5_file['data'])
@@ -29,7 +30,9 @@ def read_all_actions(hdf5_file, metric_skip_steps=1):
 @click.option('-o', '--output', required=True, help='output hdf5 path. Parent directory must exist')
 def main(input, output):
     # process inputs
+    # test = '~/Documents/robocasa_dagger/robocasa/datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo.hdf5'
     input = pathlib.Path(input).expanduser()
+    # pdb.set_trace()
     assert input.is_file()
     output = pathlib.Path(output).expanduser()
     assert output.is_file()

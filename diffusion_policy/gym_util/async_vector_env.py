@@ -361,6 +361,7 @@ class AsyncVectorEnv(VectorEnv):
         return True
 
     def _check_observation_spaces(self):
+        import pdb; pdb.set_trace()
         self._assert_is_running()
         for pipe in self.parent_pipes:
             pipe.send(("_check_observation_space", self.single_observation_space))

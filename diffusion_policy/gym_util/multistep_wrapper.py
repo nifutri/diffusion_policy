@@ -98,7 +98,7 @@ class MultiStepWrapper(gym.Wrapper):
         obs = self._get_obs(self.n_obs_steps)
         return obs
 
-    def step(self, action):
+    def step(self, action, render=False):
         """
         actions: (n_action_steps,) + action_shape
         """
@@ -106,7 +106,11 @@ class MultiStepWrapper(gym.Wrapper):
             if len(self.done) > 0 and self.done[-1]:
                 # termination
                 break
+            # import pdb; pdb.set_trace()
             observation, reward, done, info = super().step(act)
+            is_success = self.env.env.env._check_success()
+            # is_success = self.env.env._check_success()
+            info['is_success'] = is_success
 
             self.obs.append(observation)
             self.reward.append(reward)
@@ -116,6 +120,10 @@ class MultiStepWrapper(gym.Wrapper):
                 done = True
             self.done.append(done)
             self._add_info(info)
+            if render:
+                self.env.render()
+            
+                
 
         observation = self._get_obs(self.n_obs_steps)
         reward = aggregate(self.reward, self.reward_agg_method)

@@ -28,7 +28,7 @@ from diffusion_policy.common.json_logger import JsonLogger
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 from diffusion_policy.model.diffusion.ema_model import EMAModel
 from diffusion_policy.model.common.lr_scheduler import get_scheduler
-
+import pdb
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
@@ -36,7 +36,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
 
     def __init__(self, cfg: OmegaConf, output_dir=None):
         super().__init__(cfg, output_dir=output_dir)
-
+        
         # set seed
         seed = cfg.training.seed
         torch.manual_seed(seed)
@@ -69,6 +69,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 self.load_checkpoint(path=lastest_ckpt_path)
 
         # configure dataset
+        # pdb.set_trace()
         dataset: BaseImageDataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         assert isinstance(dataset, BaseImageDataset)
@@ -104,6 +105,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 model=self.ema_model)
 
         # configure env
+        # pdb.set_trace()
         env_runner: BaseImageRunner
         env_runner = hydra.utils.instantiate(
             cfg.task.env_runner,

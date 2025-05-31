@@ -1,3 +1,9 @@
+# dont save datasets
+datasets/
+data/
+wandb/
+robocasa/
+
 bin
 logs
 wandb

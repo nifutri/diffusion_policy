@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 from diffusion_policy.real_world.video_recorder import VideoRecorder
-
+import cv2
 class VideoRecordingWrapper(gym.Wrapper):
     def __init__(self, 
             env, 
@@ -39,9 +39,13 @@ class VideoRecordingWrapper(gym.Wrapper):
             if not self.video_recoder.is_ready():
                 self.video_recoder.start(self.file_path)
 
-            frame = self.env.render(
-                mode=self.mode, **self.render_kwargs)
+            frame = self.env.render(mode=self.mode, **self.render_kwargs)
             assert frame.dtype == np.uint8
+
+
+            frame = cv2.flip(frame, 0)
+
+            
             self.video_recoder.write_frame(frame)
         return result
     

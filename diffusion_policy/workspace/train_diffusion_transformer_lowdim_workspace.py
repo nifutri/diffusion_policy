@@ -19,6 +19,7 @@ import wandb
 import tqdm
 import numpy as np
 import shutil
+import pdb
 
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
@@ -104,6 +105,7 @@ class TrainDiffusionTransformerLowdimWorkspace(BaseWorkspace):
                 cfg.ema,
                 model=self.ema_model)
 
+        # pdb.set_trace()
         # configure env runner
         env_runner: BaseLowdimRunner
         env_runner = hydra.utils.instantiate(

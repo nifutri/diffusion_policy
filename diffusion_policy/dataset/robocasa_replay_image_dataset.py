@@ -14,6 +14,7 @@ from threadpoolctl import threadpool_limits
 import concurrent.futures
 import multiprocessing
 from omegaconf import OmegaConf
+import pdb
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.dataset.base_dataset import BaseImageDataset, LinearNormalizer
 from diffusion_policy.model.common.normalizer import LinearNormalizer, SingleFieldLinearNormalizer
@@ -30,9 +31,8 @@ from diffusion_policy.common.normalize_util import (
     array_to_stats
 )
 register_codecs()
-import pdb
 
-class RobomimicReplayImageDataset(BaseImageDataset):
+class RobocasaReplayImageDataset(BaseImageDataset):
     def __init__(self,
             shape_meta: dict,
             dataset_path: str,
@@ -51,7 +51,8 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             from_rep='axis_angle', to_rep=rotation_rep)
 
         replay_buffer = None
-        use_cache = False
+        # pdb.set_trace()
+        # use_cache = False
         if use_cache:
             cache_zarr_path = dataset_path + '.zarr.zip'
             cache_lock_path = cache_zarr_path + '.lock'
@@ -62,7 +63,7 @@ class RobomimicReplayImageDataset(BaseImageDataset):
                     try:
                         print('Cache does not exist. Creating!')
                         # store = zarr.DirectoryStore(cache_zarr_path)
-                        replay_buffer = _convert_robomimic_to_replay(
+                        replay_buffer = _convert_robocasa_to_replay(
                             store=zarr.MemoryStore(), 
                             shape_meta=shape_meta, 
                             dataset_path=dataset_path, 
@@ -83,7 +84,7 @@ class RobomimicReplayImageDataset(BaseImageDataset):
                             src_store=zip_store, store=zarr.MemoryStore())
                     print('Loaded!')
         else:
-            replay_buffer = _convert_robomimic_to_replay(
+            replay_buffer = _convert_robocasa_to_replay(
                 store=zarr.MemoryStore(), 
                 shape_meta=shape_meta, 
                 dataset_path=dataset_path, 
@@ -238,8 +239,6 @@ def _convert_actions(raw_actions, abs_action, rotation_transformer):
         raw_actions = np.concatenate([
             pos, rot, gripper
         ], axis=-1).astype(np.float32)
-
-        # pdb.set_trace()
     
         if is_dual_arm:
             raw_actions = raw_actions.reshape(-1,20)
@@ -247,12 +246,13 @@ def _convert_actions(raw_actions, abs_action, rotation_transformer):
     return actions
 
 
-def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, rotation_transformer, 
+def _convert_robocasa_to_replay(store, shape_meta, dataset_path, abs_action, rotation_transformer, 
         n_workers=None, max_inflight_tasks=None):
     if n_workers is None:
         n_workers = multiprocessing.cpu_count()
     if max_inflight_tasks is None:
-        max_inflight_tasks = n_workers * 5
+        # max_inflight_tasks = n_workers * 5
+        max_inflight_tasks = 10000
 
     # parse shape_meta
     rgb_keys = list()
@@ -270,41 +270,51 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
     root = zarr.group(store)
     data_group = root.require_group('data', overwrite=True)
     meta_group = root.require_group('meta', overwrite=True)
+    demo_key_to_episode_idx = {}
 
     with h5py.File(dataset_path) as file:
         # count total steps
+        # pdb.set_trace()
         demos = file['data']
         episode_ends = list()
         prev_end = 0
-        for i in range(len(demos)):
-            demo = demos[f'demo_{i}']
+        # for i in range(len(demos)):
+        for demo_key in list(demos.keys()):
+            demo = demos[demo_key]
             episode_length = demo['actions'].shape[0]
             episode_end = prev_end + episode_length
             prev_end = episode_end
+            demo_key_to_episode_idx[demo_key] = len(episode_ends)
             episode_ends.append(episode_end)
         n_steps = episode_ends[-1]
         episode_starts = [0] + episode_ends[:-1]
         _ = meta_group.array('episode_ends', episode_ends, 
             dtype=np.int64, compressor=None, overwrite=True)
+        # pdb.set_trace()
 
         # save lowdim data
-        
         for key in tqdm(lowdim_keys + ['action'], desc="Loading lowdim data"):
             data_key = 'obs/' + key
             if key == 'action':
                 data_key = 'actions'
             this_data = list()
-            for i in range(len(demos)):
-                demo = demos[f'demo_{i}']
+            # for i in range(len(demos)):
+            for demo_key in list(demos.keys()):
+                demo = demos[demo_key]
+                
                 this_data.append(demo[data_key][:].astype(np.float32))
             this_data = np.concatenate(this_data, axis=0)
             if key == 'action':
-
+                
                 this_data = _convert_actions(
                     raw_actions=this_data,
                     abs_action=abs_action,
                     rotation_transformer=rotation_transformer
                 )
+                print("this_data.shape", this_data.shape)
+                print("shape_meta", shape_meta)
+                # pdb.set_trace()
+                this_data = this_data[:,:7]
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['action']['shape'])
             else:
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['obs'][key]['shape'])
@@ -316,10 +326,13 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 compressor=None,
                 dtype=this_data.dtype
             )
+            # pdb.set_trace()
         
         def img_copy(zarr_arr, zarr_idx, hdf5_arr, hdf5_idx):
             try:
                 zarr_arr[zarr_idx] = hdf5_arr[hdf5_idx]
+                # print("zarr_arr[zarr_idx]", zarr_arr[zarr_idx])
+                # print("hdf5_arr[hdf5_idx]", hdf5_arr[hdf5_idx])
                 # make sure we can successfully decode
                 _ = zarr_arr[zarr_idx]
                 return True
@@ -330,10 +343,15 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             # one chunk per thread, therefore no synchronization needed
             with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
                 futures = set()
-                for key in rgb_keys:
+                for key_idx in range(len(rgb_keys)):
+                    key = rgb_keys[key_idx]
+                    # pdb.set_trace()
                     data_key = 'obs/' + key
-                    shape = tuple(shape_meta['obs'][key]['shape']) # expecting 3, 84, 84 shape
+                    shape = tuple(shape_meta['obs'][key]['shape'])
+                    # shape = tuple([3,128,128])
                     c,h,w = shape
+                    
+
                     this_compressor = Jpeg2k(level=50)
                     img_arr = data_group.require_dataset(
                         name=key,
@@ -342,15 +360,15 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                         compressor=this_compressor,
                         dtype=np.uint8
                     )
-                    for episode_idx in range(len(demos)):
-                        demo = demos[f'demo_{episode_idx}']
+                    # for episode_idx in range(len(demos)):
+                    for demo_key in list(demos.keys()):
+                        demo = demos[demo_key]
+                        print(f'Loading {key} from {demo_key}')
+                        # pdb.set_trace()
                         
                         hdf5_arr = demo['obs'][key]
-
-                        
-                        pdb.set_trace()
-
                         for hdf5_idx in range(hdf5_arr.shape[0]):
+                            # print("hdf5_idx", hdf5_idx)
                             if len(futures) >= max_inflight_tasks:
                                 # limit number of inflight tasks
                                 completed, futures = concurrent.futures.wait(futures, 
@@ -358,9 +376,12 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                                 for f in completed:
                                     if not f.result():
                                         raise RuntimeError('Failed to encode image!')
-                                pbar.update(len(completed))
-
+                                    pbar.update(len(completed))
+                            episode_idx = demo_key_to_episode_idx[demo_key]
                             zarr_idx = episode_starts[episode_idx] + hdf5_idx
+                            # pdb.set_trace()
+                            # img_copy(
+                            #     img_arr, zarr_idx, hdf5_arr, hdf5_idx)
                             futures.add(
                                 executor.submit(img_copy, 
                                     img_arr, zarr_idx, hdf5_arr, hdf5_idx))

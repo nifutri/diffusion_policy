@@ -66,9 +66,24 @@ class SyncVectorEnv(VectorEnv):
         for env in self.envs:
             observation = env.reset()
             observations.append(observation)
-        self.observations = concatenate(
-            observations, self.observations, self.single_observation_space
-        )
+        
+
+        print("Expected shapes", [self.single_observation_space[x].shape for x in self.single_observation_space.keys()])
+        print("Got shapes", [observation[x].shape for x in observation.keys()])
+        print("prev obs shapes", [self.observations[x].shape for x in self.observations.keys()])
+        # import pdb; pdb.set_trace()
+        # key 'robot0_agentview_right_image' and 'robot0_eye_in_hand_image' in observation is (2, 128, 128, 3) but should be (2, 3, 128, 128)
+        # if observation['robot0_agentview_right_image'].shape == (2, 128, 128, 3):
+        for key in observation.keys():
+            if 'image' in key:
+                # print(f"Transposing {key} from {observation[key].shape} to {observation[key].transpose(0, 3, 1, 2).shape}")
+                observation[key] = observation[key].transpose(0, 3, 1, 2)
+        # observation['robot0_agentview_right_image'] = observation['robot0_agentview_right_image'].transpose(0, 3, 1, 2)
+        # observation['robot0_agentview_left_image'] = observation['robot0_agentview_left_image'].transpose(0, 3, 1, 2)
+        # observation['robot0_eye_in_hand_image'] = observation['robot0_eye_in_hand_image'].transpose(0, 3, 1, 2)
+        # print("after transpose shapes", [observation[x].shape for x in observation.keys()])
+        # if observation['robot0_agentview_right_image'].shape == (2, 128, 128, 3):
+        self.observations = concatenate(observations, self.observations, self.single_observation_space)
 
         return deepcopy(self.observations) if self.copy else self.observations
 
@@ -83,6 +98,15 @@ class SyncVectorEnv(VectorEnv):
             #     observation = env.reset()
             observations.append(observation)
             infos.append(info)
+
+        for key in observation.keys():
+            if 'image' in key:
+                # print(f"Transposing {key} from {observation[key].shape} to {observation[key].transpose(0, 3, 1, 2).shape}")
+                observation[key] = observation[key].transpose(0, 3, 1, 2)
+
+        # observation['robot0_agentview_right_image'] = observation['robot0_agentview_right_image'].transpose(0, 3, 1, 2)
+        # observation['robot0_agentview_left_image'] = observation['robot0_agentview_left_image'].transpose(0, 3, 1, 2)
+        # observation['robot0_eye_in_hand_image'] = observation['robot0_eye_in_hand_image'].transpose(0, 3, 1, 2)
         self.observations = concatenate(
             observations, self.observations, self.single_observation_space
         )

@@ -18,26 +18,48 @@ from diffusion_policy.model.common.rotation_transformer import RotationTransform
 from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
-from diffusion_policy.env.robomimic.robomimic_image_wrapper import RobomimicImageWrapper
+from diffusion_policy.env.robocasa.robocasa_image_wrapper import RobocasaImageWrapper
 import robomimic.utils.file_utils as FileUtils
-import robomimic.utils.env_utils as EnvUtils
+import robocasa.utils.env_utils as EnvUtils
 import robomimic.utils.obs_utils as ObsUtils
+from robocasa.scripts.playback_dataset import get_env_metadata_from_dataset, get_env_from_dataset
+from diffusion_policy.common.robocasa_util import create_environment
 import pdb
+import robosuite
 
-def create_env(env_meta, shape_meta, enable_render=True):
+def create_env(dataset_path, env_meta, shape_meta, enable_render=True):
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
         modality_mapping[attr.get('type', 'low_dim')].append(key)
     ObsUtils.initialize_obs_modality_mapping_from_dict(modality_mapping)
 
+    env = create_environment(dataset_path=dataset_path)
+
+    # env_type = 1
+    # env_kwargs = env_meta["env_kwargs"]
+    # env_kwargs["env_name"] = env_meta["env_name"]
+    # env_kwargs["has_renderer"] = False
+    # env_kwargs["renderer"] = "mjviewer"
+    # env_kwargs["has_offscreen_renderer"] = False
+    # env_kwargs["use_camera_obs"] = False
+    # # pdb.set_trace()
+    # env = robosuite.make(**env_kwargs)
+
+    # import pdb; pdb.set_trace()
+
+    # 
+
+
+    # env = EnvUtils.create_env(env_name=env_meta['env_name'], **env_kwargs,)
+
     # pdb.set_trace()
-    env = EnvUtils.create_env_from_metadata(env_meta=env_meta,render=False, render_offscreen=enable_render,use_image_obs=enable_render, )
+    # env = EnvUtils.create_env_from_metadata(env_meta=env_meta,render=False, render_offscreen=enable_render,use_image_obs=enable_render, )
     return env
 
 
-class RobomimicImageRunner(BaseImageRunner):
+class RobocasaImageRunner(BaseImageRunner):
     """
-    Robomimic envs already enforces number of steps.
+    Robocasa envs also enforces number of steps.
     """
 
     def __init__(self, 
@@ -72,10 +94,9 @@ class RobomimicImageRunner(BaseImageRunner):
         steps_per_render = max(robosuite_fps // fps, 1)
 
         # read from dataset
-        env_meta = FileUtils.get_env_metadata_from_dataset(
-            dataset_path)
+        env_meta = get_env_metadata_from_dataset(dataset_path)
         # disable object state observation
-        env_meta['env_kwargs']['use_object_obs'] = False
+        # env_meta['env_kwargs']['use_object_obs'] = False
 
         rotation_transformer = None
         # pdb.set_trace()
@@ -83,16 +104,35 @@ class RobomimicImageRunner(BaseImageRunner):
             env_meta['env_kwargs']['controller_configs']['control_delta'] = False
             rotation_transformer = RotationTransformer('axis_angle', 'rotation_6d')
 
+        self.demo_idx_to_initial_state = {}
+        with h5py.File(dataset_path, 'r') as f:
+
+            # list of all demonstration episodes (sorted in increasing number order)
+            demos = list(f["data"].keys())
+
+            inds = np.argsort([int(elem[5:]) for elem in demos])
+            demos = [demos[i] for i in inds]
+
+            for ind in range(len(demos)):
+                ep = demos[ind]
+                
+                # prepare initial state to reload from
+                states = f["data/{}/states".format(ep)][()]
+                initial_state = dict(states=states[0])
+                initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
+                initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
+                self.demo_idx_to_initial_state[ind] = initial_state
+
         def env_fn():
-            robomimic_env = create_env(env_meta=env_meta, shape_meta=shape_meta)
+            robomimic_env = create_env(dataset_path=dataset_path, env_meta=env_meta, shape_meta=shape_meta)
             # Robosuite's hard reset causes excessive memory consumption.
             # Disabled to run more envs.
             # https://github.com/ARISE-Initiative/robosuite/blob/92abf5595eddb3a845cd1093703e5a3ccd01e77e/robosuite/environments/base.py#L247-L248
             
-            robomimic_env.env.hard_reset = False
+            robomimic_env.hard_reset = False
             return MultiStepWrapper(
                 VideoRecordingWrapper(
-                    RobomimicImageWrapper(
+                    RobocasaImageWrapper(
                         env=robomimic_env,
                         shape_meta=shape_meta,
                         init_state=None,
@@ -120,13 +160,14 @@ class RobomimicImageRunner(BaseImageRunner):
         # is needed to initialize spaces.
         def dummy_env_fn():
             robomimic_env = create_env(
+                    dataset_path=dataset_path,
                     env_meta=env_meta, 
                     shape_meta=shape_meta,
                     enable_render=False
                 )
             return MultiStepWrapper(
                 VideoRecordingWrapper(
-                    RobomimicImageWrapper(
+                    RobocasaImageWrapper(
                         env=robomimic_env,
                         shape_meta=shape_meta,
                         init_state=None,
@@ -152,13 +193,29 @@ class RobomimicImageRunner(BaseImageRunner):
         env_seeds = list()
         env_prefixs = list()
         env_init_fn_dills = list()
-
+        
+        # n_train = 10
+        # n_test = 0
         # train
         with h5py.File(dataset_path, 'r') as f:
+            # pdb.set_trace()
+            dataset_demos = list(f['data'].keys())
+
+
             for i in range(n_train):
+                train_demo_key = dataset_demos[i]
                 train_idx = train_start_idx + i
                 enable_render = i < n_train_vis
-                init_state = f[f'data/demo_{train_idx}/states'][0]
+                # print("train_idx", train_idx)
+                # pdb.set_trace()
+                # init_state = f[f'data/{train_demo_key}/states'][0]
+                # state_list = f["data/demo_{}/states".format(train_idx)][()]
+                # init_state = dict(states=state_list[0])
+                # init_state["model"] = f["data/demo_{}".format(train_idx)].attrs["model_file"]
+                # init_state["ep_meta"] = f["data/demo_{}".format(train_idx)].attrs.get("ep_meta", None)
+                # print("init_state", init_state)
+                init_state = self.demo_idx_to_initial_state[train_idx]
+                # pdb.set_trace()
 
                 def init_fn(env, init_state=init_state, 
                     enable_render=enable_render):
@@ -175,7 +232,7 @@ class RobomimicImageRunner(BaseImageRunner):
                         env.env.file_path = filename
 
                     # switch to init_state reset
-                    assert isinstance(env.env.env, RobomimicImageWrapper)
+                    assert isinstance(env.env.env, RobocasaImageWrapper)
                     env.env.env.init_state = init_state
 
                 env_seeds.append(train_idx)
@@ -202,7 +259,7 @@ class RobomimicImageRunner(BaseImageRunner):
                     env.env.file_path = filename
 
                 # switch to seed reset
-                assert isinstance(env.env.env, RobomimicImageWrapper)
+                assert isinstance(env.env.env, RobocasaImageWrapper)
                 env.env.env.init_state = None
                 env.seed(seed)
 
@@ -210,8 +267,8 @@ class RobomimicImageRunner(BaseImageRunner):
             env_prefixs.append('test/')
             env_init_fn_dills.append(dill.dumps(init_fn))
 
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
-        # env = SyncVectorEnv(env_fns)
+        # env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
+        env = SyncVectorEnv(env_fns)
 
 
         self.env_meta = env_meta
@@ -297,15 +354,25 @@ class RobomimicImageRunner(BaseImageRunner):
                     print(action)
                     raise RuntimeError("Nan or Inf action")
                 
+                # pdb.set_trace()
+                # need to add
+                action_horz = action.shape[1]
+                batch_size = action.shape[0]
+                added_dims = np.tile([0,0,0,0,-1], (batch_size, action_horz, 1))
+                action = np.concatenate([action, added_dims], axis=2)
+
+                
                 # step env
                 env_action = action
+                # env_action = env_action[:,:,:12]
+                # pdb.set_trace()
                 if self.abs_action:
                     env_action = self.undo_transform_action(action)
                 # import pdb; pdb.set_trace()
 
                 # add 1 dimension to env_action with -1 values
-                null_dim_action = np.ones((env_action.shape[0], env_action.shape[1], 1), dtype=env_action.dtype) * -1
-                env_action = np.concatenate([env_action, null_dim_action], axis=-1)
+                # null_dim_action = np.ones((env_action.shape[0], env_action.shape[1], 1), dtype=env_action.dtype) * -1
+                # env_action = np.concatenate([env_action, null_dim_action], axis=-1)
 
                 obs, reward, done, info = env.step(env_action)
                 done = np.all(done)
@@ -351,6 +418,8 @@ class RobomimicImageRunner(BaseImageRunner):
             value = np.mean(value)
             log_data[name] = value
 
+        # pdb.set_trace()
+
         return log_data
 
     def undo_transform_action(self, action):
@@ -359,13 +428,15 @@ class RobomimicImageRunner(BaseImageRunner):
             # dual arm
             action = action.reshape(-1,2,10)
 
-        d_rot = action.shape[-1] - 4
+        d_rot = 6
         pos = action[...,:3]
         rot = action[...,3:3+d_rot]
-        gripper = action[...,[-1]]
+        remaining_actions = action[...,3+d_rot:]
+
+        # pdb.set_trace()
         rot = self.rotation_transformer.inverse(rot)
         uaction = np.concatenate([
-            pos, rot, gripper
+            pos, rot, remaining_actions
         ], axis=-1)
 
         if raw_shape[-1] == 20:

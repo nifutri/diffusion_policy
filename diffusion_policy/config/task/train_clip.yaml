@@ -1,0 +1,105 @@
+name: train_example
+# name: test
+
+img_obs_horizon: 1
+action_horizon: 32
+action_dim: 7
+ignore_proprioception: False
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    left_image:
+      shape: [3, 224, 224]
+      horizon: ${task.img_obs_horizon} # int
+      type: rgb
+      ignore_by_policy: False
+    right_image:
+      shape: [3, 224, 224]
+      horizon: ${task.img_obs_horizon} # int
+      type: rgb
+      ignore_by_policy: False
+    gripper_image:
+      shape: [3, 224, 224]
+      horizon: ${task.img_obs_horizon} # int
+      type: rgb
+      ignore_by_policy: False
+    task_description:
+      shape: [1024]
+      horizon: ${task.img_obs_horizon} # int
+      type: low_dim
+      ignore_by_policy: False
+
+  action: 
+    shape: 
+      - ${task.action_dim}
+    horizon: ${task.action_horizon}
+
+task_name: &task_name clip
+pose_repr: &pose_repr
+  obs_pose_repr: relative # abs or rel
+  action_pose_repr: relative # abs or rel or delta
+
+env_runner:
+  _target_: diffusion_policy.env_runner.real_pusht_image_runner.RealPushTImageRunner
+
+lang_model:
+  _target_: diffusion_policy.model.vision.clip_obs_encoder.FrozenOpenCLIPImageEmbedder
+
+dataset:
+  _target_: diffusion_policy.dataset.clip_dataset.InMemoryVideoDataset
+  frame_width: 224
+  frame_height: 224
+  sample_fps: 30
+  video_fps: 30
+  pred_horizon: ${task.action_horizon}
+  obs_horizon: ${task.img_obs_horizon}
+  validation_split: 0
+  action_dim: ${task.action_dim}
+  swap_rgb: false
+  mode: "train"
+  data_fraction: 0.5
+
+  lang_model: ${task.lang_model}
+
+  aug:
+    crop: 0.9
+    brightness: 0.2
+    contrast: 0.2
+    saturation_rgb: 0.2
+    saturation_depth: 0.02
+    hue_rgb: 0.05
+    hue_depth: 0.02
+
+  tasks: 
+    # CoffeePressButton: null
+    # CoffeeServeMug: null
+    # CoffeeSetupMug: null
+    # CloseDoubleDoor: null
+    # CloseSingleDoor: null
+    # OpenDoubleDoor: null
+    # OpenSingleDoor: null
+    # CloseDrawer: null
+    # OpenDrawer: null
+    # TurnOffMicrowave: null
+    # TurnOnMicrowave: null
+    PnPCabToCounter: null
+    # PnPCounterToCab: null
+    # PnPCounterToMicrowave: null
+    # PnPCounterToSink: null
+    # PnPCounterToStove: null
+    # PnPMicrowaveToCounter: null
+    # PnPSinkToCounter: null
+    # PnPStoveToCounter: null
+    # TurnOffSinkFaucet: null
+    # TurnOnSinkFaucet: null
+    # TurnSinkSpout: null
+    # TurnOffStove: null
+    # TurnOnStove: null
+
+    # OpenSingleDoor:
+    # PnPCabToCounter:
+    # TurnOffSinkFaucet:
+
+  skip_demos:
+    TurnOnStove: ["demo_33", "demo_37"]

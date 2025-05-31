@@ -8,7 +8,7 @@ import robomimic.utils.env_utils as EnvUtils
 from scipy.spatial.transform import Rotation
 
 from robomimic.config import config_factory
-
+import pdb
 
 class RobomimicAbsoluteActionConverter:
     def __init__(self, dataset_path, algo_name='bc'):
@@ -22,9 +22,8 @@ class RobomimicAbsoluteActionConverter:
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path)
         abs_env_meta = copy.deepcopy(env_meta)
         abs_env_meta['env_kwargs']['controller_configs']['control_delta'] = False
-
-        env = EnvUtils.create_env_from_metadata(
-            env_meta=env_meta,
+        # pdb.set_trace()
+        env = EnvUtils.create_env_from_metadata(env_meta=env_meta,
             render=False, 
             render_offscreen=False,
             use_image_obs=False, 

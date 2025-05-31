@@ -15,11 +15,12 @@ from robomimic.algo import algo_factory
 from robomimic.algo.algo import PolicyAlgo
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.models.base_nets as rmbn
-import diffusion_policy.model.vision.crop_randomizer as dmvc
+# import diffusion_policy.model.vision.crop_randomizer as dmvc
+import diffusion_policy.model.vision.color_crop_randomizer as dmvc
 from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
 
 
-class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
+class DiffusionUnetRobocasaHybridImagePolicy(BaseImagePolicy):
     def __init__(self, 
             shape_meta: dict,
             noise_scheduler: DDPMScheduler,
@@ -28,7 +29,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             n_obs_steps,
             num_inference_steps=None,
             obs_as_global_cond=True,
-            crop_shape=(76, 76),
+            crop_shape=(232, 232),
             diffusion_step_embed_dim=256,
             down_dims=(256,512,1024),
             kernel_size=5,
@@ -124,6 +125,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
                     num_crops=x.num_crops,
                     pos_enc=x.pos_enc
                 )
+
             )
 
         # create diffusion model
@@ -264,7 +266,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         
         # unnormalize prediction
         naction_pred = nsample[...,:Da]
-        
+        # import pdb; pdb.set_trace()
         action_pred = self.normalizer['action'].unnormalize(naction_pred)
 
         # get action
