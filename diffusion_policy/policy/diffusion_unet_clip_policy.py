@@ -156,9 +156,53 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         assert nsample.shape == (B, self.action_horizon, self.action_dim)
         
         return nsample
+    
+    def predict_action_with_infos(self, obs_dict: Dict[str, torch.Tensor], fixed_action_prefix: torch.Tensor=None) -> Dict[str, torch.Tensor]:
+        """
+        obs_dict: must include "obs" key
+        fixed_action_prefix: unnormalized action prefix
+        result: must include "action" key
+        """
+        assert 'past_action' not in obs_dict # not implemented yet
+        # normalize input
+        nobs = obs_dict
+        B = next(iter(nobs.values())).shape[0]
+
+        # condition through global feature
+        global_cond = self.obs_encoder(nobs)
+
+        # empty data for action
+        cond_data = torch.zeros(size=(B, self.action_horizon, self.action_dim), device=self.device, dtype=self.dtype)
+        cond_mask = torch.zeros_like(cond_data, dtype=torch.bool)
+
+        if fixed_action_prefix is not None and self.inpaint_fixed_action_prefix:
+            n_fixed_steps = fixed_action_prefix.shape[1]
+            cond_data[:, :n_fixed_steps] = fixed_action_prefix
+            cond_mask[:, :n_fixed_steps] = True
+            cond_data = self.normalizer['action'].normalize(cond_data)
+
+
+        # run sampling
+        nsample = self.conditional_sample(
+            condition_data=cond_data, 
+            condition_mask=cond_mask,
+            local_cond=None,
+            global_cond=global_cond,
+            **self.kwargs)
+        
+        assert nsample.shape == (B, self.action_horizon, self.action_dim)
+
+        result = {
+            'action': nsample,
+            'action_pred': nsample,
+            'global_cond': global_cond,
+        }
+        
+        return nsample, result
 
     # ========= training  ============
     def set_normalizer(self, normalizer: LinearNormalizer):
+        # pdb.set_trace()
         self.normalizer.load_state_dict(normalizer.state_dict())
 
     def compute_loss(self, batch):

@@ -260,7 +260,9 @@ class InMemoryVideoDataset(Dataset):
             if task not in task_list:
                 continue
 
-            human_path = "datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im256_randcams.hdf5"
+            # human_path = "datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im256_randcams.hdf5"
+            human_path = "datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5"
+            # human_path = "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/2024-04-24/demo_gentex_im128_randcams_im256.hdf5"
 
             in_memory_data = self.load_hdf5_into_memory(human_path)
 

@@ -8,7 +8,7 @@ checkpoint:
     mode: max
     monitor_key: test_mean_score
 dataloader:
-  batch_size: 128
+  batch_size: 256
   num_workers: 8
   persistent_workers: false
   pin_memory: true
@@ -56,8 +56,8 @@ policy:
   _target_: diffusion_policy.policy.diffusion_unet_robocasa_hybrid_image_policy.DiffusionUnetRobocasaHybridImagePolicy
   cond_predict_scale: true
   crop_shape:
-  - 232
-  - 232
+  - 128
+  - 128
   diffusion_step_embed_dim: 128
   down_dims:
   - 512
@@ -280,7 +280,7 @@ task:
   task_name: closedrawer
 task_name: closedrawer_image
 training:
-  checkpoint_every: 100
+  checkpoint_every: 20
   debug: false
   device: cuda:1
   gradient_accumulate_every: 1
@@ -288,14 +288,15 @@ training:
   lr_warmup_steps: 500
   max_train_steps: null
   max_val_steps: null
-  num_epochs: 401
+  num_epochs: 8000
+  num_epochs_total_train: 401
   resume: true
-  rollout_every: 100
+  rollout_every: 20
   sample_every: 5
   seed: 42
   tqdm_interval_sec: 1.0
   use_ema: true
-  val_every: 100
+  val_every: 20
 val_dataloader:
   batch_size: 64
   num_workers: 8

@@ -94,6 +94,12 @@ class SyncVectorEnv(VectorEnv):
         observations, infos = [], []
         for i, (env, action) in enumerate(zip(self.envs, self._actions)):
             observation, self._rewards[i], self._dones[i], info = env.step(action)
+
+            if env.env.env.env._check_success():
+                info['is_success'] = True
+                self._rewards[i] = 1.0
+            
+            # import pdb; pdb.set_trace()
             # if self._dones[i]:
             #     observation = env.reset()
             observations.append(observation)

@@ -153,7 +153,7 @@ class TrainDiffusionUnetRobocasaHybridWorkspace(BaseWorkspace):
         # training loop
         log_path = os.path.join(self.output_dir, 'logs.json.txt')
         with JsonLogger(log_path) as json_logger:
-            for local_epoch_idx in range(cfg.training.num_epochs):
+            for local_epoch_idx in range(cfg.training.num_epochs_total_train):
                 step_log = dict()
                 # ========= train for this epoch ==========
                 train_losses = list()

@@ -58,7 +58,35 @@ def create_eval_env(dataset_path, env_meta, shape_meta, enable_render=True):
 #     env_name = 'CloseDrawer'
 #     env = create_eval_env(env_name)
 #     return env
+## Get metrics
+def adjust_xshape(x, in_dim):
+    total_dim = x.shape[1]
+    # Calculate the padding needed to make total_dim a multiple of in_dim
+    remain_dim = total_dim % in_dim
+    if remain_dim > 0:
+        pad = in_dim - remain_dim
+        total_dim += pad
+        x = torch.cat([x, torch.zeros(x.shape[0], pad, device=x.device)], dim=1)
+    # Calculate the padding needed to make (total_dim // in_dim) a multiple of 4
+    reshaped_dim = total_dim // in_dim
+    if reshaped_dim % 4 != 0:
+        extra_pad = (4 - (reshaped_dim % 4)) * in_dim
+        x = torch.cat([x, torch.zeros(x.shape[0], extra_pad, device=x.device)], dim=1)
+    return x.reshape(x.shape[0], -1, in_dim)
 
+def logpZO_UQ(baseline_model, observation, action_pred = None, task_name = 'square'):
+    observation = observation
+    in_dim = 7
+    observation = adjust_xshape(observation, in_dim)
+    if action_pred is not None:
+        action_pred = action_pred
+        observation = torch.cat([observation, action_pred], dim=1)
+    with torch.no_grad():
+        timesteps = torch.zeros(observation.shape[0], device=observation.device)
+        pred_v = baseline_model(observation, timesteps)
+        observation = observation + pred_v
+        logpZO = observation.reshape(len(observation), -1).pow(2).sum(dim=-1)
+    return logpZO
 
 class EvalRobocasaImageRunner(BaseImageRunner):
     """
@@ -150,6 +178,7 @@ class EvalRobocasaImageRunner(BaseImageRunner):
 
         # for rollout_idx in range(self.n_eval_rollouts):
         print("rollout_idx", rollout_idx)
+        self.robomimic_env = create_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
         # robomimic_env = create_eval_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
         filepath = self.rollout_dir / f"rollout_{rollout_idx}.mp4"
         # create filepath 
@@ -304,3 +333,200 @@ class EvalRobocasaImageRunner(BaseImageRunner):
             uaction = uaction.reshape(*raw_shape[:-1], 14)
 
         return uaction
+
+    def compute_rollout_scores(self, policy: BaseImagePolicy, score_network, rollout_idx):
+        device = policy.device
+        dtype = policy.dtype
+
+        self.score_network = score_network
+
+        rollout_idx_to_successes = {}
+        num_successes = 0
+
+        # for rollout_idx in range(self.n_eval_rollouts):
+        print("rollout_idx", rollout_idx)
+        self.robomimic_env = create_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
+        # robomimic_env = create_eval_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
+        filepath = self.rollout_dir / f"rollout_{rollout_idx}.mp4"
+        # create filepath 
+        filename = pathlib.Path(self.output_dir).joinpath(
+            'rollouts', str(rollout_idx) + ".mp4")
+        filename.parent.mkdir(parents=False, exist_ok=True)
+        filename = str(filename)
+
+
+    
+
+        env = MultiStepWrapper(
+                VideoRecordingWrapper(
+                    RobocasaImageWrapper(
+                        env=self.robomimic_env,
+                        shape_meta=self.shape_meta,
+                        init_state=None,
+                        render_obs_key=self.render_obs_key
+                    ),
+                    video_recoder=VideoRecorder.create_h264(
+                        fps=self.fps,
+                        codec='h264',
+                        input_pix_fmt='rgb24',
+                        crf=self.crf,
+                        thread_type='FRAME',
+                        thread_count=1
+                    ),
+                    file_path=filename,
+                    steps_per_render=self.steps_per_render
+                ),
+            n_obs_steps=self.n_obs_steps,
+            n_action_steps=self.n_action_steps,
+            max_episode_steps=self.max_steps
+        )
+
+        # env = self.env
+        
+        # start rollout
+        obs = env.reset()
+        past_action = None
+        policy.reset()
+        self.timestep = 0
+
+        env_name = self.env_meta['env_name']
+        pbar = tqdm.tqdm(total=self.max_steps, desc=f"Eval {env_name}Timestep {self.timestep}/{self.max_steps}", 
+            leave=False, mininterval=self.tqdm_interval_sec)
+        
+        
+        done = False
+        logpZO_local_slices = []
+        dones = []
+        rewards = []
+        observations = []
+        actions = []
+        infos = []
+        X_encodings = []
+        Y_encodings = []
+
+        while not done:
+            # create obs dict
+            np_obs_dict = dict(obs)
+            if self.past_action and (past_action is not None):
+                # TODO: not tested
+                np_obs_dict['past_action'] = past_action[
+                    :,-(self.n_obs_steps-1):].astype(np.float32)
+            
+            # device transfer
+            obs_dict = dict_apply(np_obs_dict, 
+                lambda x: torch.from_numpy(x).to(
+                    device=device))
+            
+            
+            # run policy
+            with torch.no_grad():
+                # pdb.set_trace() # shape 2,3
+                # images need to be [1, 2, 3, 128, 128]
+                for key in obs_dict.keys():
+                    obs_dict[key] = obs_dict[key].unsqueeze(0)
+
+                # image_keys = ['robot0_agentview_right_image','robot0_eye_in_hand_image']
+                for img_key in obs_dict:
+                    if 'image' in img_key:
+                    # images are currently torch.Size([1, 2, 128, 128, 3]) but need to be [1, 2, 3, 128, 128]
+                        obs_dict[img_key] = obs_dict[img_key].permute(0, 1, 4, 2, 3)
+
+                # pdb.set_trace()
+                # print("running prediction")
+                action_dict = policy.predict_action(obs_dict)
+
+                baseline_metric = logpZO_UQ(self.score_network, action_dict['global_cond'])
+                logpZO_local_slices.append(baseline_metric)
+                # print("done predicting")
+
+                # device_transfer
+                np_action_dict = dict_apply(action_dict,
+                    lambda x: x.detach().to('cpu').numpy())
+
+                action = np_action_dict['action']
+                if not np.all(np.isfinite(action)):
+                    print(action)
+                    raise RuntimeError("Nan or Inf action")
+                
+                action_horz = action.shape[1]
+                batch_size = action.shape[0]
+                added_dims = np.tile([0,0,0,0,-1], (batch_size, action_horz, 1))
+                action = np.concatenate([action, added_dims], axis=2)
+
+                # get encodings
+                mod = policy # See "policy" folder
+                # pdb.set_trace()
+                nobs = mod.normalizer.normalize(obs_dict)
+                nactions = mod.normalizer['action'].normalize(action_dict['action'])
+                batch_size = nactions.shape[0]
+
+                # handle different ways of passing observation
+                trajectory = nactions.reshape(batch_size, -1)
+                # Get latent representation of observations
+                this_nobs = dict_apply(nobs, 
+                    lambda x: x[:,:mod.n_obs_steps,...].reshape(-1,*x.shape[2:]))
+                nobs_features = mod.obs_encoder(this_nobs)
+                # reshape back to B, Do
+                global_cond = nobs_features.reshape(batch_size, -1)
+
+                X_encodings.append(global_cond.cpu()) 
+                Y_encodings.append(trajectory.cpu())
+                
+                # step env
+                env_action = action[0] # since we run only env at a time, need to take the first
+                # env_action = env_action[:,:,:12]
+                # print("action", action.shape, action.dtype)
+                # print("action val", action)
+                # pdb.set_trace()
+                if self.abs_action:
+                    env_action = self.undo_transform_action(action)
+
+
+                obs, reward, done, info = env.step(env_action, render=False)
+                dones.append(done)
+                rewards.append(reward)
+                observations.append(obs)
+                actions.append(action)
+                infos.append(info)
+
+
+        
+            
+            # print("done rendering")
+            done = np.all(done)
+            past_action = action
+            self.timestep += 1
+
+            # update pbar
+            pbar.update(action.shape[1])
+        pbar.close()
+
+        env.render()
+        rollout_idx_to_successes[rollout_idx] = info
+        print("rollout_idx_to_successes", rollout_idx_to_successes)
+        if info['is_success'][0] ==  True:
+            num_successes += 1
+        print("num_successes", num_successes)
+
+        # clear out video buffer
+        # pdb.set_trace()
+        env.close()
+
+        aggregated_data = {
+            'rollout_idx': rollout_idx,
+            'observations': observations,
+            'actions': actions,
+            'rewards': rewards,
+            'dones': dones,
+            'infos': infos,
+            'logpZO_local_slices': logpZO_local_slices,
+            'X_encodings': X_encodings,
+            'Y_encodings': Y_encodings
+        }
+
+        
+
+        return rollout_idx_to_successes, num_successes, logpZO_local_slices, aggregated_data
+    
+
+    

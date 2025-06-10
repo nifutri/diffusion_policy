@@ -1,0 +1,33 @@
+Sat Jun  7 23:20:55 2025
+ERROR: Default framebuffer is not complete, error 0x0
+
+Sat Jun  7 23:22:00 2025
+ERROR: Default framebuffer is not complete, error 0x0
+
+Sat Jun  7 23:23:17 2025
+ERROR: Default framebuffer is not complete, error 0x0
+
+Sun Jun  8 20:00:46 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:47 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:48 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:48 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:50 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:51 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:51 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sun Jun  8 20:00:53 2025
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+

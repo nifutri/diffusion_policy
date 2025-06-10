@@ -3,6 +3,10 @@ datasets/
 data/
 wandb/
 robocasa/
+*.pkl
+*ipynb
+images/
+*.ckpt
 
 bin
 logs

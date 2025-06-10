@@ -35,7 +35,7 @@ for stage in stages:
                 # convert each demo to im256
             
                 for demo in demos:
-                    if 'demo.hdf5' not in demo:
+                    if 'demo_gentex_im128_randcams.hdf5' not in demo or 'zip' in demo:
                         continue
                     # convert to im256
                     data_path = os.path.join(dataset_dir, stage, kitchen_domain, task, date, demo)

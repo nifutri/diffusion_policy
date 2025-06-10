@@ -15,8 +15,8 @@ from robomimic.algo import algo_factory
 from robomimic.algo.algo import PolicyAlgo
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.models.base_nets as rmbn
-# import diffusion_policy.model.vision.crop_randomizer as dmvc
-import diffusion_policy.model.vision.color_crop_randomizer as dmvc
+import diffusion_policy.model.vision.crop_randomizer as dmvc
+# import diffusion_policy.model.vision.color_crop_randomizer as dmvc
 from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
 
 
@@ -264,6 +264,11 @@ class DiffusionUnetRobocasaHybridImagePolicy(BaseImagePolicy):
             global_cond=global_cond,
             **self.kwargs)
         
+        # if self.num_rep > 1:
+        #     cond_data = cond_data.repeat_interleave(self.num_rep, dim=0)
+        #     cond_mask = cond_mask.repeat_interleave(self.num_rep, dim=0)
+        #     global_cond = global_cond.repeat_interleave(self.num_rep, dim=0)
+        
         # unnormalize prediction
         naction_pred = nsample[...,:Da]
         # import pdb; pdb.set_trace()
@@ -276,7 +281,8 @@ class DiffusionUnetRobocasaHybridImagePolicy(BaseImagePolicy):
         
         result = {
             'action': action,
-            'action_pred': action_pred
+            'action_pred': action_pred,
+            'global_cond': global_cond,
         }
         return result
 

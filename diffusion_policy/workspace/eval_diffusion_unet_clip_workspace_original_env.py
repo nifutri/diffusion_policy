@@ -29,8 +29,9 @@ from termcolor import colored
 import robosuite
 from robocasa.utils.dataset_registry import get_ds_path
 # from robocasa.utils.eval_utils import create_eval_env_modified
-import robocasa.utils.eval_utils
+# import robocasa.utils.eval_utils
 from hydra.core.hydra_config import HydraConfig
+import matplotlib.pyplot as plt
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -74,6 +75,8 @@ def create_eval_env_modified(
         use_object_obs=True,
         use_camera_obs=True,
         camera_depths=False,
+        # renderer="mjviewer",
+        # render_camera="robot0_agentview_right",
         seed=seed,
         obj_instance_split=obj_instance_split,
         generative_textures=generative_textures,
@@ -104,30 +107,30 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         self.payload_cfg.task.dataset.mode = cfg.dataset_mode
 
         self.payload_cfg.task.dataset.tasks = {
-            'CoffeePressButton': None,
-            'CoffeeServeMug': None,
-            'CoffeeSetupMug': None,
-            'CloseDoubleDoor': None,
-            'CloseSingleDoor': None,
-            'OpenDoubleDoor': None,
-            'OpenSingleDoor': None,
+            # 'CoffeePressButton': None,
+            # 'CoffeeServeMug': None,
+            # 'CoffeeSetupMug': None,
+            # 'CloseDoubleDoor': None,
+            # 'CloseSingleDoor': None,
+            # 'OpenDoubleDoor': None,
+            # 'OpenSingleDoor': None,
             'CloseDrawer': None,
-            'OpenDrawer': None,
-            'TurnOffMicrowave': None,
-            'TurnOnMicrowave': None,
-            'PnPCabToCounter': None,
-            'PnPCounterToCab': None,
-            'PnPCounterToMicrowave': None,
-            'PnPCounterToSink': None,
-            'PnPCounterToStove': None,
-            'PnPMicrowaveToCounter': None,
-            'PnPSinkToCounter': None,
-            'PnPStoveToCounter': None,
-            'TurnOffSinkFaucet': None,
-            'TurnOnSinkFaucet': None,
-            'TurnSinkSpout': None,
-            'TurnOffStove': None,
-            'TurnOnStove': None,
+            # 'OpenDrawer': None,
+            # 'TurnOffMicrowave': None,
+            # 'TurnOnMicrowave': None,
+            # 'PnPCabToCounter': None,
+            # 'PnPCounterToCab': None,
+            # 'PnPCounterToMicrowave': None,
+            # 'PnPCounterToSink': None,
+            # 'PnPCounterToStove': None,
+            # 'PnPMicrowaveToCounter': None,
+            # 'PnPSinkToCounter': None,
+            # 'PnPStoveToCounter': None,
+            # 'TurnOffSinkFaucet': None,
+            # 'TurnOnSinkFaucet': None,
+            # 'TurnSinkSpout': None,
+            # 'TurnOffStove': None,
+            # 'TurnOnStove': None,
         }
 
         for key in self.payload_cfg.task.dataset.tasks:
@@ -300,6 +303,9 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         return None
 
     def convert_observations(self, dataset, left_image_queue, right_image_queue, gripper_image_queue, clip_embedding):
+        # save png of the three camera views before conversion
+        # left_image_queue = deque(maxlen=dataset.img_obs_horizon)
+        # right_image_queue = deque(maxlen=dataset.img_obs_horizon)
 
         left_image = np.stack([dataset.convert_frame(frame=frame, swap_rgb=dataset.swap_rgb) for frame in left_image_queue])
         right_image = np.stack([dataset.convert_frame(frame=frame, swap_rgb=dataset.swap_rgb) for frame in right_image_queue])
@@ -372,13 +378,16 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         for demo in demos:
 
             demo_number = int(demo.replace("demo_", ""))
-
+            
+            environment_data['env_kwargs']['has_renderer'] = True
+            environment_data['env_kwargs']["renderer"] = "mjviewer"
             env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
             
             # initial_state = environment_data['demos'][demo]['initial_state']
             # self.reset_to(env, initial_state)
 
             env.reset()
+            # pdb.set_trace()
 
             task_description = env.get_ep_meta()["lang"]
             task_description = open_clip.tokenize([task_description]) # returns torch.Size([1, 77])
@@ -395,10 +404,20 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             for i in range(int(max_traj_len/action_horizon)):
 
                 video_img = []
+                visual_obs = env._get_observations()
                 for cam_name in camera_names:
-                    im = env.sim.render(
-                        height=camera_height, width=camera_width, camera_name=cam_name
-                    )[::-1]
+                    # im_og = env.sim.render(
+                    #     height=camera_height, width=camera_width, camera_name=cam_name
+                    # )[::-1]
+                    # pdb.set_trace()
+                    # im = env.sim.render(
+                    #     height=camera_height, width=camera_width, camera_name=cam_name
+                    # )[::-1]
+                    # 
+                    im = visual_obs[cam_name+'_image']
+                    # flip im, currently it is upside down
+                    im = np.flip(im, axis=0)
+                    # pdb.set_trace()
                     video_img.append(im)
 
                 left_image_queue.append(video_img[0])
@@ -427,15 +446,24 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
 
                     # video render
                     video_img = []
+                    visual_obs = env._get_observations()
                     for cam_name in camera_names:
-                        im = env.sim.render(
-                            height=camera_height, width=camera_width, camera_name=cam_name
-                        )[::-1]
+                        # im = env.sim.render(
+                        #     height=camera_height, width=camera_width, camera_name=cam_name
+                        # )[::-1]
+                        im = visual_obs[cam_name+'_image']
+                        im = np.flip(im, axis=0)
                         video_img.append(im)
+                        
                     video_img = np.concatenate(
                         video_img, axis=1
                     )  # concatenate horizontally
                     video_writer.append_data(video_img)
+                    # print("video_img", video_img)
+                    # plt.imshow(video_img)
+                    # plt.axis('off')
+                    # plt.show(block=False)
+                    # plt.pause(0.00001)
 
                     if env._check_success():
                         break
@@ -454,6 +482,8 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
 
             with lock:
                 self.update_json_file(experiment_record, experiments_data)
+
+            env.close()
 
         pass
 

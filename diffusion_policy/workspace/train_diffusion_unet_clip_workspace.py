@@ -111,6 +111,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
 
         # configure dataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
+        # import pdb; pdb.set_trace()
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
 
         print('train dataset:', len(dataset), ', ' 'train dataloader:', len(train_dataloader))

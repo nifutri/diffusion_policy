@@ -1,4 +1,4 @@
-name: train_example
+name: train_closedrawer
 # name: test
 
 img_obs_horizon: 1
@@ -79,11 +79,11 @@ dataset:
     # CloseSingleDoor: null
     # OpenDoubleDoor: null
     # OpenSingleDoor: null
-    # CloseDrawer: null
+    CloseDrawer: null
     # OpenDrawer: null
     # TurnOffMicrowave: null
     # TurnOnMicrowave: null
-    PnPCabToCounter: null
+    # PnPCabToCounter: null
     # PnPCounterToCab: null
     # PnPCounterToMicrowave: null
     # PnPCounterToSink: null

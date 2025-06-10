@@ -1,315 +1,165 @@
-_target_: diffusion_policy.workspace.train_diffusion_unet_robocasa_hybrid_workspace.TrainDiffusionUnetRobocasaHybridWorkspace
-checkpoint:
-  save_last_ckpt: true
-  save_last_snapshot: false
-  topk:
-    format_str: epoch={epoch:04d}-train_loss={train_loss:.3f}.ckpt
-    k: 5
-    mode: min
-    monitor_key: train_loss
-dataloader:
-  batch_size: 384
-  num_workers: 32
-  persistent_workers: true
-  pin_memory: true
-  shuffle: true
-dataset_obs_steps: 2
+defaults:
+  - _self_
+  - task: train_clip
+
+name: train_diffusion_unet_clip
+_target_: diffusion_policy.workspace.train_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
+
+task_name: ${task.name}
+shape_meta: ${task.shape_meta}
+exp_name: "default"
+
+policy:
+  _target_: diffusion_policy.policy.diffusion_unet_clip_policy.DiffusionUnetTimmPolicy
+
+  shape_meta: ${shape_meta}
+  
+  noise_scheduler:
+    _target_: diffusers.DDIMScheduler
+    num_train_timesteps: 50
+    beta_start: 0.0001
+    beta_end: 0.02
+    # beta_schedule is important
+    # this is the best we found
+    beta_schedule: squaredcos_cap_v2
+    clip_sample: True
+    set_alpha_to_one: True
+    steps_offset: 0
+    prediction_type: epsilon # or sample
+
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.clip_obs_encoder.TimmObsEncoder
+    shape_meta: ${shape_meta}
+
+    ##### from scratch #####
+    # model_name: 'vit_base_patch16_224'
+    # model_name: 'resnet34'
+    # model_name: 'vit_tiny_patch16_224'
+    # model_name: 'efficientnet_b0'
+    # model_name: 'efficientnet_b3'
+    # pretrained: False
+    # frozen: False
+
+    ##### from scratch #####
+    # model_name: 'resnet34.a1_in1k'
+    model_name: 'vit_base_patch16_clip_224.openai'
+    # model_name: 'convnext_base.clip_laion2b_augreg_ft_in12k'
+    pretrained: True
+    frozen: False
+
+    
+    global_pool: ''
+
+    # 'avg' or 'max' or 'soft_attention' or 'spatial_embedding' or 'transformer' or 'attention_pool_2d'
+    feature_aggregation: 'attention_pool_2d'
+    # feature_aggregation: null
+    position_encording: 'sinusoidal' # 'learnable' or 'sinusoidal'. it only works for transformer
+
+    # it only works for resnet. 32 (7x7) or 16 (14x14)
+    downsample_ratio: 32
+
+    # transforms:
+    #   - type: RandomCrop
+    #     ratio: 0.95
+    #   - _target_: torchvision.transforms.ColorJitter
+    #     brightness: 0.3
+    #     contrast: 0.4
+    #     saturation: 0.5
+    #     hue: 0.08
+
+    transforms: null
+
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True
+
+  num_inference_steps: 16
+  obs_as_global_cond: True
+  diffusion_step_embed_dim: 128
+  down_dims: [512,1024,2048]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: True
+  input_pertub: 0.1 # reference: https://github.com/forever208/DDPM-IP
+  # train multiple diffusion steps per obs encoder forward pass
+  # doing this too much will cause instability!
+  train_diffusion_n_samples: 1
+
 ema:
   _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
-  inv_gamma: 1.0
-  max_value: 0.9999
-  min_value: 0.0
-  power: 0.75
   update_after_step: 0
-exp_name: default
-horizon: 16
-keypoint_visible_rate: 1.0
-logging:
-  group: null
-  id: null
-  mode: online
-  name: 2022.12.29-22.31.34_train_diffusion_unet_robocasa_hybrid_closedrawer_image
-  project: diffusion_policy_debug
-  resume: true
-  tags:
-  - train_diffusion_unet_hybrid
-  - square_image
-  - default
-multi_run:
-  run_dir: data/outputs/2022.12.29/22.31.34_train_diffusion_unet_robocasa_hybrid_closedrawer_image
-  wandb_name_base: 2022.12.29-22.31.34_train_diffusion_unet_robocasa_hybrid_closedrawer_image
-n_action_steps: 8
-n_latency_steps: 0
-n_obs_steps: 2
-name: train_diffusion_unet_robocasa_hybrid
-obs_as_global_cond: true
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 128
+  num_workers: 32
+  shuffle: True
+  pin_memory: True
+  persistent_workers: True
+
 optimizer:
   _target_: torch.optim.AdamW
-  betas:
-  - 0.95
-  - 0.999
-  eps: 1.0e-08
-  lr: 3.0e-04
-  weight_decay: 1.0e-06
-past_action_visible: false
-policy:
-  _target_: diffusion_policy.policy.diffusion_unet_robocasa_hybrid_image_policy.DiffusionUnetRobocasaHybridImagePolicy
-  cond_predict_scale: true
-  crop_shape:
-  - 76
-  - 76
-  diffusion_step_embed_dim: 128
-  down_dims:
-  - 512
-  - 1024
-  - 2048
-  eval_fixed_crop: true
-  horizon: 16
-  kernel_size: 5
-  n_action_steps: 8
-  n_groups: 8
-  n_obs_steps: 2
-  noise_scheduler:
-    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
-    beta_end: 0.02
-    beta_schedule: squaredcos_cap_v2
-    beta_start: 0.0001
-    clip_sample: true
-    num_train_timesteps: 100
-    prediction_type: epsilon
-    variance_type: fixed_small
-  num_inference_steps: 50
-  obs_as_global_cond: true
-  obs_encoder_group_norm: true
-  shape_meta:
-    action:
-      shape:
-      - 7
-    obs:
-      robot0_eye_in_hand_image:
-        shape:
-        - 3
-        - 256
-        - 256
-        type: rgb
-      robot0_agentview_left_image:
-        shape:
-        - 3
-        - 256
-        - 256
-        type: rgb
-      robot0_agentview_right_image:
-        shape:
-        - 3
-        - 256
-        - 256
-        type: rgb
-      robot0_eef_pos:
-        shape:
-        - 3
-      robot0_eef_quat:
-        shape:
-        - 4
-      
-      robot0_gripper_qpos:
-        shape:
-        - 2
-shape_meta:
-  action:
-    shape:
-    - 7
-  obs:
-    robot0_eye_in_hand_image:
-      shape:
-      - 3
-      - 256
-      - 256
-      type: rgb
-    robot0_agentview_left_image:
-      shape:
-      - 3
-      - 256
-      - 256
-      type: rgb
-    robot0_agentview_right_image:
-      shape:
-      - 3
-      - 256
-      - 256
-      type: rgb
-    
-    robot0_eef_pos:
-      shape:
-      - 3
-    robot0_eef_quat:
-      shape:
-      - 4
-    
-    robot0_gripper_qpos:
-      shape:
-      - 2
-task:
-  abs_action: false
-  dataset:
-    _target_: diffusion_policy.dataset.robocasa_replay_image_dataset.RobocasaReplayImageDataset
-    abs_action: false
-    dataset_path: ../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_im256.hdf5
-    horizon: 16
-    n_obs_steps: 2
-    pad_after: 7
-    pad_before: 1
-    rotation_rep: rotation_6d
-    seed: 42
-    shape_meta:
-      action:
-        shape:
-        - 7
-      obs:
-        robot0_eye_in_hand_image:
-          shape:
-          - 3
-          - 256
-          - 256
-          type: rgb
-        robot0_agentview_left_image:
-          shape:
-          - 3
-          - 256
-          - 256
-          type: rgb
-        robot0_agentview_right_image:
-          shape:
-          - 3
-          - 256
-          - 256
-          type: rgb
-        
-        robot0_eef_pos:
-          shape:
-          - 3
-        robot0_eef_quat:
-          shape:
-          - 4
-        
-        robot0_gripper_qpos:
-          shape:
-          - 2
-    use_cache: true
-    val_ratio: 0.02
-  dataset_path: ../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_im256.hdf5
-  dataset_type: ph
-  env_runner:
-    _target_: diffusion_policy.env_runner.robocasa_image_runner.RobocasaImageRunner
-    abs_action: false
-    crf: 22
-    dataset_path: ../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_im256.hdf5
-    fps: 10
-    max_steps: 300
-    n_action_steps: 8
-    n_envs: 1
-    n_obs_steps: 2
-    n_test: 3
-    n_test_vis: 3
-    n_train: 0
-    n_train_vis: 0
-    past_action: false
-    render_obs_key: robot0_agentview_right_image
-    shape_meta:
-      action:
-        shape:
-        - 7
-      obs:
-        robot0_eye_in_hand_image:
-          shape:
-          - 3
-          - 256
-          - 256
-          type: rgb
-        robot0_agentview_left_image:
-          shape:
-          - 3
-          - 256
-          - 256
-          type: rgb
-        robot0_agentview_right_image:
-          shape:
-          - 3
-          - 256
-          - 256
-          type: rgb
-        
-        robot0_eef_pos:
-          shape:
-          - 3
-        robot0_eef_quat:
-          shape:
-          - 4
-        
-        robot0_gripper_qpos:
-          shape:
-          - 2
-    test_start_seed: 100000
-    tqdm_interval_sec: 1.0
-    train_start_idx: 0
-  name: closedrawer_image
-  shape_meta:
-    action:
-      shape:
-      - 7
-    obs:
-      
-      robot0_eye_in_hand_image:
-        shape:
-        - 3
-        - 256
-        - 256
-        type: rgb
-      robot0_agentview_left_image:
-        shape:
-        - 3
-        - 256
-        - 256
-        type: rgb
-      robot0_agentview_right_image:
-        shape:
-        - 3
-        - 256
-        - 256
-        type: rgb
-      
-      robot0_eef_pos:
-        shape:
-        - 3
-      robot0_eef_quat:
-        shape:
-        - 4
-      
-      robot0_gripper_qpos:
-        shape:
-        - 2
-  task_name: closedrawer
-task_name: closedrawer_image
+  lr: 3.0e-4
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+
 training:
-  checkpoint_every: 50
-  debug: false
-  device: cuda:0
-  gradient_accumulate_every: 1
+  device: "cuda:0"
+  seed: 42
+  debug: False
+  resume: False
+  # optimization
   lr_scheduler: cosine
   lr_warmup_steps: 2000
+  num_epochs: 1000
+  gradient_accumulate_every: 1
+  # EMA destroys performance when used with BatchNorm
+  # replace BatchNorm with GroupNorm.
+  use_ema: True
+  freeze_encoder: False
+  # training loop control
+  # in epochs
+  rollout_every: 0
+  checkpoint_every: 1
+  val_every: 1
+  sample_every: 5
+  # steps per epoch
   max_train_steps: null
   max_val_steps: null
-  num_epochs: 8000
-  resume: true
-  rollout_every: 50
-  sample_every: 5
-  seed: 42
+  # misc
   tqdm_interval_sec: 1.0
-  use_ema: true
-  val_every: 50
-val_dataloader:
-  batch_size: 64
-  num_workers: 8
-  persistent_workers: false
-  pin_memory: true
-  shuffle: false
 
+logging:
+  project: clip
+  resume: False
+  mode: online
+  name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
+  tags: ["${name}", "${task_name}", "${exp_name}"]
+  id: null
+  group: null
+
+checkpoint:
+  topk:
+    monitor_key: train_loss
+    mode: min
+    k: 5
+    format_str: 'epoch={epoch:04d}-train_loss={train_loss:.3f}.ckpt'
+  save_last_ckpt: True
+  save_last_snapshot: False
+
+# multi_run:
+#   run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+#   wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${name}_${task_name}/${now:%H.%M.%S}
+  sweep:
+    dir: data/outputs/${name}_${task_name}/${now:%H.%M.%S}
+    subdir: ${hydra.job.num}

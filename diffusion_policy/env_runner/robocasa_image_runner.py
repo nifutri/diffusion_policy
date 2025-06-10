@@ -27,6 +27,36 @@ from diffusion_policy.common.robocasa_util import create_environment
 import pdb
 import robosuite
 
+## Get metrics
+def adjust_xshape(x, in_dim):
+    total_dim = x.shape[1]
+    # Calculate the padding needed to make total_dim a multiple of in_dim
+    remain_dim = total_dim % in_dim
+    if remain_dim > 0:
+        pad = in_dim - remain_dim
+        total_dim += pad
+        x = torch.cat([x, torch.zeros(x.shape[0], pad, device=x.device)], dim=1)
+    # Calculate the padding needed to make (total_dim // in_dim) a multiple of 4
+    reshaped_dim = total_dim // in_dim
+    if reshaped_dim % 4 != 0:
+        extra_pad = (4 - (reshaped_dim % 4)) * in_dim
+        x = torch.cat([x, torch.zeros(x.shape[0], extra_pad, device=x.device)], dim=1)
+    return x.reshape(x.shape[0], -1, in_dim)
+
+def logpZO_UQ(baseline_model, observation, action_pred = None, task_name = 'square'):
+    observation = observation
+    in_dim = 7
+    observation = adjust_xshape(observation, in_dim)
+    if action_pred is not None:
+        action_pred = action_pred
+        observation = torch.cat([observation, action_pred], dim=1)
+    with torch.no_grad():
+        timesteps = torch.zeros(observation.shape[0], device=observation.device)
+        pred_v = baseline_model(observation, timesteps)
+        observation = observation + pred_v
+        logpZO = observation.reshape(len(observation), -1).pow(2).sum(dim=-1)
+    return logpZO
+
 def create_env(dataset_path, env_meta, shape_meta, enable_render=True):
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
@@ -84,7 +114,8 @@ class RobocasaImageRunner(BaseImageRunner):
             n_envs=None
         ):
         super().__init__(output_dir)
-
+        n_train = 0
+        n_test = 20
         if n_envs is None:
             n_envs = n_train + n_test
 
@@ -95,33 +126,23 @@ class RobocasaImageRunner(BaseImageRunner):
 
         # read from dataset
         env_meta = get_env_metadata_from_dataset(dataset_path)
+
+        for val in shape_meta['obs'].values():
+            if len(val['shape']) == 3:
+                # To get higher resolution images!
+                env_meta['env_kwargs']['camera_heights'] = val['shape'][-1]
+                env_meta['env_kwargs']['camera_widths'] = val['shape'][-1]
+                break
         # disable object state observation
-        # env_meta['env_kwargs']['use_object_obs'] = False
+        env_meta['env_kwargs']['use_object_obs'] = False
 
         rotation_transformer = None
-        # pdb.set_trace()
         if abs_action:
             env_meta['env_kwargs']['controller_configs']['control_delta'] = False
             rotation_transformer = RotationTransformer('axis_angle', 'rotation_6d')
 
-        self.demo_idx_to_initial_state = {}
-        with h5py.File(dataset_path, 'r') as f:
-
-            # list of all demonstration episodes (sorted in increasing number order)
-            demos = list(f["data"].keys())
-
-            inds = np.argsort([int(elem[5:]) for elem in demos])
-            demos = [demos[i] for i in inds]
-
-            for ind in range(len(demos)):
-                ep = demos[ind]
-                
-                # prepare initial state to reload from
-                states = f["data/{}/states".format(ep)][()]
-                initial_state = dict(states=states[0])
-                initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
-                initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
-                self.demo_idx_to_initial_state[ind] = initial_state
+        # load initial states from robocasa dataset
+        self.load_initial_states(dataset_path)
 
         def env_fn():
             robomimic_env = create_env(dataset_path=dataset_path, env_meta=env_meta, shape_meta=shape_meta)
@@ -194,8 +215,7 @@ class RobocasaImageRunner(BaseImageRunner):
         env_prefixs = list()
         env_init_fn_dills = list()
         
-        # n_train = 10
-        # n_test = 0
+
         # train
         with h5py.File(dataset_path, 'r') as f:
             # pdb.set_trace()
@@ -206,16 +226,8 @@ class RobocasaImageRunner(BaseImageRunner):
                 train_demo_key = dataset_demos[i]
                 train_idx = train_start_idx + i
                 enable_render = i < n_train_vis
-                # print("train_idx", train_idx)
-                # pdb.set_trace()
-                # init_state = f[f'data/{train_demo_key}/states'][0]
-                # state_list = f["data/demo_{}/states".format(train_idx)][()]
-                # init_state = dict(states=state_list[0])
-                # init_state["model"] = f["data/demo_{}".format(train_idx)].attrs["model_file"]
-                # init_state["ep_meta"] = f["data/demo_{}".format(train_idx)].attrs.get("ep_meta", None)
-                # print("init_state", init_state)
+
                 init_state = self.demo_idx_to_initial_state[train_idx]
-                # pdb.set_trace()
 
                 def init_fn(env, init_state=init_state, 
                     enable_render=enable_render):
@@ -261,7 +273,7 @@ class RobocasaImageRunner(BaseImageRunner):
                 # switch to seed reset
                 assert isinstance(env.env.env, RobocasaImageWrapper)
                 env.env.env.init_state = None
-                env.seed(seed)
+                # env.seed(seed)
 
             env_seeds.append(seed)
             env_prefixs.append('test/')
@@ -287,6 +299,27 @@ class RobocasaImageRunner(BaseImageRunner):
         self.abs_action = abs_action
         self.tqdm_interval_sec = tqdm_interval_sec
 
+    def load_initial_states(self, dataset_path):
+        self.demo_idx_to_initial_state = {}
+        with h5py.File(dataset_path, 'r') as f:
+
+            # list of all demonstration episodes (sorted in increasing number order)
+            demos = list(f["data"].keys())
+
+            inds = np.argsort([int(elem[5:]) for elem in demos])
+            demos = [demos[i] for i in inds]
+
+            for ind in range(len(demos)):
+                ep = demos[ind]
+                
+                # prepare initial state to reload from
+                states = f["data/{}/states".format(ep)][()]
+                initial_state = dict(states=states[0])
+                initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
+                initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
+                self.demo_idx_to_initial_state[ind] = initial_state
+
+
     def run(self, policy: BaseImagePolicy):
         device = policy.device
         dtype = policy.dtype
@@ -300,6 +333,7 @@ class RobocasaImageRunner(BaseImageRunner):
         # allocate data
         all_video_paths = [None] * n_inits
         all_rewards = [None] * n_inits
+        
 
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
@@ -328,9 +362,11 @@ class RobocasaImageRunner(BaseImageRunner):
                 leave=False, mininterval=self.tqdm_interval_sec)
             
             done = False
+            logpZO_local_slices = []
             while not done:
                 # create obs dict
                 np_obs_dict = dict(obs)
+                
                 if self.past_action and (past_action is not None):
                     # TODO: not tested
                     np_obs_dict['past_action'] = past_action[
@@ -421,6 +457,7 @@ class RobocasaImageRunner(BaseImageRunner):
         # pdb.set_trace()
 
         return log_data
+    
 
     def undo_transform_action(self, action):
         raw_shape = action.shape
@@ -444,3 +481,161 @@ class RobocasaImageRunner(BaseImageRunner):
             uaction = uaction.reshape(*raw_shape[:-1], 14)
 
         return uaction
+
+
+    def compute_rollout_scores(self, policy: BaseImagePolicy, score_network, N_test_calib_rollouts=1):
+        device = policy.device
+        dtype = policy.dtype
+        env = self.env
+
+        self.score_network = score_network
+        # pdb.set_trace()
+        
+        # plan for rollout
+        n_envs = len(self.env_fns)
+        n_inits = len(self.env_init_fn_dills)
+        n_chunks = math.ceil(n_inits / n_envs)
+
+        # allocate data
+        all_video_paths = [None] * n_inits
+        all_rewards = [None] * n_inits
+        all_logpZO = [None] * n_inits # Stores logpZO for all rollout across all steps
+        
+
+        for chunk_idx in range(n_chunks):
+            start = chunk_idx * n_envs
+            end = min(n_inits, start + n_envs)
+            this_global_slice = slice(start, end)
+            this_n_active_envs = end - start
+            this_local_slice = slice(0,this_n_active_envs)
+            
+            this_init_fns = self.env_init_fn_dills[this_global_slice]
+            n_diff = n_envs - len(this_init_fns)
+            if n_diff > 0:
+                this_init_fns.extend([self.env_init_fn_dills[0]]*n_diff)
+            assert len(this_init_fns) == n_envs
+
+            # init envs
+            env.call_each('run_dill_function', 
+                args_list=[(x,) for x in this_init_fns])
+
+            # start rollout
+            obs = env.reset()
+            past_action = None
+            policy.reset()
+
+            env_name = self.env_meta['env_name']
+            pbar = tqdm.tqdm(total=self.max_steps, desc=f"Eval {env_name}Image {chunk_idx+1}/{n_chunks}", 
+                leave=False, mininterval=self.tqdm_interval_sec)
+            
+            done = False
+            logpZO_local_slices = []
+            while not done:
+                # create obs dict
+                np_obs_dict = dict(obs)
+                
+                if self.past_action and (past_action is not None):
+                    # TODO: not tested
+                    np_obs_dict['past_action'] = past_action[
+                        :,-(self.n_obs_steps-1):].astype(np.float32)
+                
+                # device transfer
+                obs_dict = dict_apply(np_obs_dict, 
+                    lambda x: torch.from_numpy(x).to(
+                        device=device))
+
+                # run policy
+                with torch.no_grad():
+                    action_dict = policy.predict_action(obs_dict)
+
+
+                # get score
+                # pdb.set_trace()
+                baseline_metric = logpZO_UQ(self.score_network, action_dict['global_cond'])
+                logpZO_local_slices.append(baseline_metric)
+
+                # device_transfer
+                np_action_dict = dict_apply(action_dict,
+                    lambda x: x.detach().to('cpu').numpy())
+
+                action = np_action_dict['action']
+                if not np.all(np.isfinite(action)):
+                    print(action)
+                    raise RuntimeError("Nan or Inf action")
+
+                
+                
+                # pdb.set_trace()
+                # need to add
+                action_horz = action.shape[1]
+                batch_size = action.shape[0]
+                added_dims = np.tile([0,0,0,0,-1], (batch_size, action_horz, 1))
+                action = np.concatenate([action, added_dims], axis=2)
+
+                
+                # step env
+                env_action = action
+                # env_action = env_action[:,:,:12]
+                # pdb.set_trace()
+                if self.abs_action:
+                    env_action = self.undo_transform_action(action)
+                # import pdb; pdb.set_trace()
+
+                # add 1 dimension to env_action with -1 values
+                # null_dim_action = np.ones((env_action.shape[0], env_action.shape[1], 1), dtype=env_action.dtype) * -1
+                # env_action = np.concatenate([env_action, null_dim_action], axis=-1)
+
+                obs, reward, done, info = env.step(env_action)
+                # pdb.set_trace()
+                done = np.all(done)
+                past_action = action
+
+                # update pbar
+                pbar.update(action.shape[1])
+            pbar.close()
+
+            # collect data for this round
+            all_video_paths[this_global_slice] = env.render()[this_local_slice]
+            all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
+            logpZO_local_slices = torch.stack(logpZO_local_slices, dim=1) # (n_envs, max_steps // T_p)
+            all_logpZO[this_global_slice] = logpZO_local_slices
+            print("all rewards", all_rewards[this_global_slice])
+            print("all logpZO", all_logpZO[this_global_slice])
+        # clear out video buffer
+        _ = env.reset()
+        
+        # log
+        max_rewards = collections.defaultdict(list)
+        log_data = dict()
+        # results reported in the paper are generated using the commented out line below
+        # which will only report and average metrics from first n_envs initial condition and seeds
+        # fortunately this won't invalidate our conclusion since
+        # 1. This bug only affects the variance of metrics, not their mean
+        # 2. All baseline methods are evaluated using the same code
+        # to completely reproduce reported numbers, uncomment this line:
+        # for i in range(len(self.env_fns)):
+        # and comment out this line
+        for i in range(n_inits):
+            seed = self.env_seeds[i]
+            prefix = self.env_prefixs[i]
+            max_reward = np.max(all_rewards[i])
+            max_rewards[prefix].append(max_reward)
+            def helper(input, i):
+                return [f'{float(x.item()):.4f}' for x in input[i]]
+            log_data[prefix+f'sim_max_reward_{seed}'] = [max_reward, '/'.join(map(str, helper(all_logpZO, i))),]
+
+            # visualize sim
+            video_path = all_video_paths[i]
+            if video_path is not None:
+                sim_video = wandb.Video(video_path)
+                log_data[prefix+f'sim_video_{seed}'] = sim_video
+        
+        # log aggregate metrics
+        for prefix, value in max_rewards.items():
+            name = prefix+'mean_score'
+            value = np.mean(value)
+            log_data[name] = value
+
+        # pdb.set_trace()
+
+        return log_data

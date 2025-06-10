@@ -27,8 +27,16 @@ def create_environment(dataset_path):
     env_kwargs["env_name"] = env_meta["env_name"]
     env_kwargs["has_renderer"] = False
     env_kwargs["renderer"] = "mjviewer"
+    # render_camera="robot0_agentview_left",
+    # env_kwargs["render_camera"] = "robot0_agentview_left"
     env_kwargs["has_offscreen_renderer"] = True
     env_kwargs["use_camera_obs"] = True
+    env_kwargs["obj_instance_split"] = "B"
+    env_kwargs["generative_textures"] = None
+    env_kwargs["randomize_cameras"] = False
+    env_kwargs["layout_and_style_ids"] = ((1, 1), (2, 2), (4, 4), (6, 9), (7, 10))
+    env_kwargs["layout_ids"] = None
+    env_kwargs["style_ids"] = None
 
     # create the environment
     env = robosuite.make(**env_kwargs)
