@@ -151,7 +151,7 @@ def get_metric(y_true, y_pred):
 
 
 
-def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=False, CPband=True, suffix=''):
+def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha=0.01, lb=False, CPband=True, suffix=''):
     
 
     """Detect anomalies using prediction bands and create visualization plots.
@@ -193,8 +193,8 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
     print(f'#### Number of training trajectories: {len(log_probs_train)}')
     print("#### Number of test trajectories: ", len(log_probs_test))
     print(f'#### Use {len(log_probs_train)} successful trajectories for calibration')
-    # predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
-    predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
+    predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
+    # predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
     if CPband:
         print(f'Number of success for mean {ntr} and for band {ncal}')
         # pdb.set_trace()
@@ -260,6 +260,7 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
     # ax.legend(fontsize=fsize-4, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
     ax.grid()
     fig.tight_layout()
+    plt.savefig(os.path.join(save_folder, f'CP_band_train_rollouts{suffix}.png'), dpi=300)
     plt.show()
     plt.close()
 
@@ -274,6 +275,7 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
     ax.legend(fontsize=fsize-4)
     ax.grid()
     fig.tight_layout()
+    plt.savefig(os.path.join(save_folder, f'CP_band_train_rollouts_histogram{suffix}.png'), dpi=300)
     plt.show()
     plt.close()
 
@@ -299,6 +301,7 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
     # ax.legend(fontsize=fsize-4, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
     ax.grid()
     fig.tight_layout()
+    plt.savefig(os.path.join(save_folder, f'CP_band_test_rollouts{suffix}.png'), dpi=300)
     plt.show()
     plt.close()
 
@@ -314,6 +317,10 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
         log_prob_test_scores = log_probs_test_plt[test_idx]
         success = successes_test_plt[test_idx]
 
+        if np.mean(log_prob_test_scores) > 10000:
+            print("high value", global_indices_of_test[test_idx])
+        else:
+            print("low value", global_indices_of_test[test_idx])
         observation_frames = img_frames[global_indices_of_test[test_idx]]
         
         CP_upper_band = target_traj
@@ -327,10 +334,10 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
                 
                 if success == 0: # if failed, then correct detection
                     num_TP += 1
-                    # fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)
-                    # plt.imshow(img)
-                    # plt.title("TRUE POSITIVE DETECTION", fontsize=fsize)
-                    # plt.show()
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)
+                    plt.imshow(img)
+                    plt.title("TRUE POSITIVE DETECTION", fontsize=fsize)
+                    plt.show()
                 else:
                     num_FP += 1 # if successful demo, then false positive
                     # fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)
@@ -350,7 +357,7 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
     print(f'### Number of True Negatives: {num_TN}')
 
     # save CP band to pickle
-    with open('CP_band.pkl', 'wb') as f:
+    with open(f'{save_folder}/CP_band.pkl', 'wb') as f:
         pickle.dump(target_traj, f)
 
     TPR = num_TP / (num_TP + num_FN) if (num_TP + num_FN) > 0 else 0
@@ -437,124 +444,79 @@ def plot_all_scores(log_probs, successes, fsize=14):
     plt.show()
 
 
-def main_old():
-    policy_type = 'diffusion'
-    task_name = 'closedrawer'
-    num_inference_step = 100  # Default value, can be adjusted based on task
-    data_file = f'runner_log_{policy_type}_{task_name}_numtrajs{num_inference_step}.pkl'
-    with open(data_file, 'rb') as f:
-        runner_log = pickle.load(f)
-
-    successes = []
-    all_log_probs = []
-    max_length = 0
-    for rollout_idx in range(len(runner_log)):
-        success = runner_log[rollout_idx][0][rollout_idx]['is_success'][0]
-        success = 1 if success else 0
-        successes.append(success)
-
-        # log_probs
-        log_probs = []
-        score_data = runner_log[rollout_idx][2]
-        for j in range(len(score_data)):
-            elem = score_data[j]
-            # convert to scalr from tensor
-            log_prob = elem[0].item() if isinstance(elem[0], torch.Tensor) else elem[0]
-            log_probs.append(log_prob)
-            if success == 1 and abs(score_data[j][0].item()-score_data[j-1][0].item())<1:
-                break
-
-        all_log_probs.append(log_probs)
-    max_length = max(len(log_probs) for log_probs in all_log_probs)
-    print("max_length", max_length)
-    # pad each log_probs with the last value to make them the same length
-    padded_log_probs = []
-    for log_probs in all_log_probs:
-        if len(log_probs) < max_length:
-            log_probs += [log_probs[-1]] * (max_length - len(log_probs))
-        padded_log_probs.append(log_probs)
-    # Convert to numpy array
-    log_probs = np.array(padded_log_probs)
-    successes = np.array(successes)
-
-
-
-    # pdb.set_trace()
-    plot_all_scores(all_log_probs, successes)
-
-    get_detection_with_plot(log_probs, successes, alpha=0.1)
 
 def main():
-    policy_type = 'diffusion'
-    task_name = 'closedrawer'
-    data_folder = 'data/experiments/train_diffusion_unet_clip_train_closedrawer_fd_scores_original_env/'
+    parser = argparse.ArgumentParser(description="Run evaluation for a specific task.")
+    parser.add_argument("task_name", type=str, help="Name of the task (e.g., closedrawer, openfridge)")
+    parser.add_argument("--experiment_name", type=str, default="train_diffusion_unet_clip", required=False)
+    parser.add_argument("--experiment_tag", type=str, default="ST_OOD_DAgger", required=False)
+    args = parser.parse_args()
 
+    task_name = args.task_name
+    experiment_name = args.experiment_name
+    experiment_tag = args.experiment_tag
+    policy_type = 'diffusion'
+    data_folder = f'data/outputs/{experiment_tag}_{experiment_name}_{task_name}/compute_rollout_scores'
     successes = []
     all_log_probs = []
-    N_rollouts = 50
     all_images = []
+    N_rollouts = 50
+    print("task_name", task_name)
+
     for demo_num in range(N_rollouts):
-        dataset_path_robocasa = data_folder+f'CloseDrawer_{demo_num}_fd_scores.pkl'
-        with open(dataset_path_robocasa, "rb") as pickle_file:
-            data = pickle.load(pickle_file)
-        
-        for demo_key in data['tasks']['CloseDrawer']['experiments']:
-            scores = data['tasks']['CloseDrawer']['experiments'][demo_key]['logpzo_scores']
-            scores = [elem.detach().cpu().numpy()[0] for elem in scores]
-            success = data['tasks']['CloseDrawer']['experiments'][demo_key]['success']
-            success_at_time = data['tasks']['CloseDrawer']['experiments'][demo_key]['success_at_times']
-            img_obs = data['tasks']['CloseDrawer']['experiments'][demo_num]['img_observations']
-            img_frames = []
+        dataset_path = data_folder + f'/{task_name}_{demo_num}_fd_scores.pkl'
+        try:
+            with open(dataset_path, "rb") as f:
+                data = pickle.load(f)
+        except FileNotFoundError:
+            print(f"File not found: {dataset_path}")
+            continue
+        # pdb.set_trace()
+        experiments = data['tasks'][task_name]['experiments']
+        for demo_key in experiments:
+            logpzo_scores = experiments[demo_key]['logpzo_scores']
+            scores = [elem.detach().cpu().numpy()[0] for elem in logpzo_scores]
+
+            success = experiments[demo_key]['success']
+            img_obs = experiments[demo_key]['img_observations']
+
             scores_filtered = []
             for i in range(len(scores)):
-                if i<len(scores)-1 and scores[i] == scores[i+1]:
+                if i < len(scores) - 1 and scores[i] == scores[i+1]:
                     break
                 scores_filtered.append(scores[i])
             scores = scores_filtered
 
+            img_frames = []
             for t in range(len(scores)):
                 leftcam, rightcam, grippercam = img_obs[t]
                 leftcam = leftcam[0,0,:].detach().cpu().numpy()
                 rightcam = rightcam[0,0,:].detach().cpu().numpy()
                 grippercam = grippercam[0,0,:].detach().cpu().numpy()
-                leftcam_rearrange = np.swapaxes(leftcam, 0,-1)
-                rightcam_rearrange = np.swapaxes(rightcam, 0,-1)
-                grippercam_rearrange = np.swapaxes(grippercam, 0,-1) 
-                
-                # rotate 90 degrees clockwise
-                leftcam_rearrange = np.rot90(leftcam_rearrange, -1)
-                rightcam_rearrange = np.rot90(rightcam_rearrange, -1)
-                grippercam_rearrange = np.rot90(grippercam_rearrange, -1)
-                
-                combined_frame = np.concatenate([leftcam_rearrange, rightcam_rearrange, grippercam_rearrange], axis=1)
-                img_frames.append(combined_frame)
+
+                leftcam = np.rot90(np.swapaxes(leftcam, 0, -1), -1)
+                rightcam = np.rot90(np.swapaxes(rightcam, 0, -1), -1)
+                grippercam = np.rot90(np.swapaxes(grippercam, 0, -1), -1)
+
+                combined = np.concatenate([leftcam, rightcam, grippercam], axis=1)
+                img_frames.append(combined)
 
             all_log_probs.append(scores)
             successes.append(success)
             all_images.append(img_frames)
 
-    max_length = max(len(log_probs) for log_probs in all_log_probs)
-    print("max_length", max_length)
-    # pad each log_probs with the last value to make them the same length
-    padded_log_probs = []
-    for log_probs in all_log_probs:
-        if len(log_probs) < max_length:
-            log_probs += [log_probs[-1]] * (max_length - len(log_probs))
-        padded_log_probs.append(log_probs)
-    # Convert to numpy array
+    max_length = max(len(lp) for lp in all_log_probs)
+    padded_log_probs = [lp + [lp[-1]] * (max_length - len(lp)) for lp in all_log_probs]
     log_probs = np.array(padded_log_probs)
     successes = np.array(successes)
+    print("success rate = ", np.mean(successes))
+    
 
-    # print shapes
     print("log_probs shape:", log_probs.shape)
     print("successes shape:", successes.shape)
 
+    get_detection_with_plot(log_probs, successes, all_images, data_folder, alpha=0.1)
+    print("success rate = ", np.mean(successes))
 
-
-    # pdb.set_trace()
-    # plot_all_scores(all_log_probs, successes)
-
-    get_detection_with_plot(log_probs, successes, all_images, alpha=0.1)
-    
 if __name__ == "__main__":
     main()

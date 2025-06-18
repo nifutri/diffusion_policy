@@ -1,0 +1,32 @@
+
+experiment_name: train_diffusion_unet_clip
+experiment_tag: ST_OOD_DAgger
+
+ckpt_folder: data/outputs/${experiment_tag}_${experiment_name}_${task_name}/base_policy
+# ckpt_path: data/outputs/2025.06.04/${ckpt_folder}/checkpoints/epoch_350_step_28079.ckpt
+ckpt_path: ${ckpt_folder}/checkpoints/latest.ckpt
+task_name: test # to be set by command line
+
+name: train_diffusion_unet_clip
+_target_: diffusion_policy.workspace.onscreen_eval_diffusion_unet_clip_workspace_original_env.EvalDiffusionUnetImageWorkspace
+
+num_inference_steps: 50
+
+environment_file: "demo_gentex_im128_randcams_100_mg_envs.pkl"
+# environment_file: "demo_gentex_im256_randcams_100_train_envs.pkl"
+num_experiments: 50
+
+execution_horizon: 16
+
+number_of_tasks: 50
+max_traj_len: 1000
+dataset_mode: "test"
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/eval_base_policy
+  sweep:
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/eval_base_policy
+    subdir: ${hydra.job.num}

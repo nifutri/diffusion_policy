@@ -1,16 +1,34 @@
-ckpt_folder: train_diffusion_unet_clip_train_closedrawer_fd_scores
-ckpt_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/epoch_350_step_28079.ckpt
-task_name: train_diffusion_unet_clip_train_closedrawer_fd_scores_original_env
+# ckpt_folder: train_diffusion_unet_clip_train_closedrawer_constant_time_human_only_dagger_450
+# ckpt_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/epoch_350_step_28079.ckpt
+# ckpt_path: data/outputs/01.50.03_{name}_train_time_varying_human_only_dagger_closedrawer/01.50.03/checkpoints/epoch_450_step_28583.ckpt
 
-name: eval_diffusion_unet_clip
+# task_name: train_diffusion_unet_clip_train_closedrawer_fd_scores_original_env
+task_name: test
+
+experiment_name: train_diffusion_unet_clip
+experiment_tag: ST_OOD_DAgger
+ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/checkpoints/latest.ckpt
+
+
+# name: eval_diffusion_unet_clip
+name: ${experiment_name}
 _target_: diffusion_policy.workspace.get_eval_rollout_FD_scores_diffusion_unet_clip_workspace_original_env.EvalComputeFDScoresDiffusionUnetImageWorkspace
 
 
 fail_detect:
-  task_name: closedrawer_clip
-  base_policy_ckpt_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/epoch_350_step_28079.ckpt
-  save_obs_embeds_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/obs_embeds.pt
-  save_score_network_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/fd_score_network.ckpt
+  # task_name: closedrawer_clip
+  # # base_policy_ckpt_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/epoch_350_step_28079.ckpt
+  # # save_obs_embeds_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/obs_embeds.pt
+  # # save_score_network_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/fd_score_network.ckpt
+
+  # base_policy_ckpt_path: data/outputs/01.50.03_{name}_train_time_varying_human_only_dagger_closedrawer/01.50.03/checkpoints/epoch_450_step_28583.ckpt
+  # save_obs_embeds_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/obs_embeds.pt
+  # save_score_network_path: data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/fd_score_network.ckpt
+
+  task_name: ${task_name}
+  base_policy_ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/checkpoints/latest.ckpt
+  save_obs_embeds_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/obs_embeds.pt
+  save_score_network_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/fd_score_network.ckpt
 
 
 num_inference_steps: 50
@@ -22,14 +40,14 @@ num_experiments: 50
 execution_horizon: 16
 
 number_of_tasks: 50
-max_traj_len: 700
+max_traj_len: 400
 dataset_mode: "test"
 
 hydra:
   job:
     override_dirname: ${name}
   run:
-    dir: data/experiments/${task_name}
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores
   sweep:
-    dir: data/experiments/${task_name}
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores
     subdir: ${hydra.job.num}

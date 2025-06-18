@@ -1,4 +1,4 @@
-name: train_closedrawer
+name: PnPSinkToCounter
 # name: test
 
 img_obs_horizon: 1
@@ -61,6 +61,7 @@ dataset:
   data_fraction: 0.5
 
   lang_model: ${task.lang_model}
+  human_path: "none"
 
   aug:
     crop: 0.9

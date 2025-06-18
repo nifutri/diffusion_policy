@@ -20,7 +20,6 @@ import shutil
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.dataset.clip_dataset import InMemoryVideoDataset
 import dill
-from robosuite.wrappers import DataCollectionWrapper, VisualizationWrapper
 import json
 from filelock import FileLock
 import imageio
@@ -33,6 +32,8 @@ from robocasa.utils.dataset_registry import get_ds_path
 # import robocasa.utils.eval_utils
 from hydra.core.hydra_config import HydraConfig
 import matplotlib.pyplot as plt
+from robosuite.wrappers import DataCollectionWrapper, VisualizationWrapper
+from robosuite.utils.binding_utils import MjRenderContext
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -82,14 +83,14 @@ def create_eval_env_modified(
         camera_names=camera_names,
         camera_widths=camera_widths,
         camera_heights=camera_heights,
-        has_renderer=False,
+        has_renderer=True,
         has_offscreen_renderer=True,
         ignore_done=True,
         use_object_obs=True,
         use_camera_obs=True,
         camera_depths=False,
-        # renderer="mjviewer",
-        # render_camera="robot0_agentview_right",
+        renderer="mjviewer",
+        render_camera="robot0_agentview_right",
         seed=seed,
         obj_instance_split=obj_instance_split,
         generative_textures=generative_textures,
@@ -126,7 +127,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         }
         self.payload_cfg.task.dataset.tasks = {task_name: None}
         self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
-
+        self.task_name = task_name
         for key in self.payload_cfg.task.dataset.tasks:
             self.payload_cfg.task.dataset.tasks[key] = {
                 "environment_file": cfg.environment_file,
@@ -335,152 +336,135 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             }
 
     def run(self):
+        total_successes = 0
+        total_run = 0
+        for i in range(0,50):
+            print(colored(f"Running experiment {i+1}/50", "green"))
+            success_val = self.run_single_idx(i)
+            total_successes += success_val
+            total_run+= 1
+            print(colored(f"Total successes: {total_successes}/{total_run}", "green"))
+        # save to txt file
+        with open(f"{self.run_dir}/successes.txt", "w") as f:
+            f.write(f"Total successes: {total_successes}/50\n")
+            f.write(f"Success rate: {total_successes/50 * 100}%\n")
 
-        experiment_record = f"{self.run_dir}/multi_environment_experiment_record.json"
-        experiment_record_lock = f"{experiment_record}.lock"
-        lock = FileLock(experiment_record_lock)
-        with lock:
-            # if os.path.exists(experiment_record):
-            #     print("Experiment record already exists.")
-            # else:
-            #     print("Experiment record does not exist.")
-            self.create_environment_data_from_yaml(self.payload_cfg.task.dataset, experiment_record)
-
-            experiments_data = self.get_earliest_pending_experiments(experiment_record, self.cfg.number_of_tasks)
-            # if experiments_data is None:
-            #     print('All experiments are in progress or completed.')
-            #     exit()
-            experiments_data = self.set_all_status_to_in_progress(experiments_data)
-            self.update_json_file(experiment_record, experiments_data)
-
-        task_name = list(experiments_data['tasks'].keys())[0]
+    def run_single_idx(self, idx):
 
         with open("datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im256_randcams_100_train_envs.pkl", "rb") as pickle_file:
             environment_data = pickle.load(pickle_file)
 
-        # env = robosuite.make(**environment_data['env_kwargs'])
+        env = robosuite.make(**environment_data['env_kwargs'])
 
-        demos = list(experiments_data['tasks'][task_name]['experiments'].keys())
 
         max_traj_len = self.cfg['max_traj_len']
-        camera_names = environment_data['env_kwargs']['camera_names']   # ['robot0_agentview_left', 'robot0_agentview_right', 'robot0_eye_in_hand']
+        camera_names =  environment_data['env_kwargs']['camera_names']
         camera_height = round(self.payload_cfg.task.dataset['frame_height']/self.payload_cfg.task.dataset['aug']['crop'])
         camera_width = round(self.payload_cfg.task.dataset['frame_width']/self.payload_cfg.task.dataset['aug']['crop'])
         pred_horizon = self.payload_cfg.task['action_horizon']
         action_horizon = self.cfg['execution_horizon']
 
-        for demo in demos:
+        demo_number = idx
 
-            demo_number = int(demo.replace("demo_", ""))
-            
-            environment_data['env_kwargs']['has_renderer'] = True
-            environment_data['env_kwargs']["renderer"] = "mjviewer"
-            env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
-            pdb.set_trace()
-            # initial_state = environment_data['demos'][demo]['initial_state']
-            # self.reset_to(env, initial_state)
+        env = create_eval_env_modified(env_name=self.task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
+        env.reset()
+        # pdb.set_trace()
 
-            env.reset()
-            # pdb.set_trace()
+        task_description = env.get_ep_meta()["lang"]
+        task_description = open_clip.tokenize([task_description]) # returns torch.Size([1, 77])
+        with torch.no_grad():
+            clip_embedding = self.dataset.lang_model(task_description.to(self.device)).cpu().unsqueeze(0) # returns torch.Size([1, 1, 1024])
 
-            task_description = env.get_ep_meta()["lang"]
-            task_description = open_clip.tokenize([task_description]) # returns torch.Size([1, 77])
-            with torch.no_grad():
-                clip_embedding = self.dataset.lang_model(task_description.to(self.device)).cpu().unsqueeze(0) # returns torch.Size([1, 1, 1024])
+        video_path = f'{self.run_dir}/{self.task_name}_{idx}.mp4'
+        video_writer = imageio.get_writer(video_path, fps=30)
 
-            video_path = f'{self.run_dir}/{task_name}_{demo}.mp4'
-            video_writer = imageio.get_writer(video_path, fps=30)
+        left_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
+        right_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
+        gripper_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
 
-            left_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
-            right_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
-            gripper_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
-            env = DataCollectionWrapper(env, directory=self.run_dir)
+        for i in range(int(max_traj_len/action_horizon)):
 
-            for i in range(int(max_traj_len/action_horizon)):
+            video_img = []
+            visual_obs = env._get_observations()
+            for cam_name in camera_names:
+                # im_og = env.sim.render(
+                #     height=camera_height, width=camera_width, camera_name=cam_name
+                # )[::-1]
+                # pdb.set_trace()
+                # im = env.sim.render(
+                #     height=camera_height, width=camera_width, camera_name=cam_name
+                # )[::-1]
+                # 
+                im = visual_obs[cam_name+'_image']
+                # flip im, currently it is upside down
+                im = np.flip(im, axis=0)
+                # pdb.set_trace()
+                video_img.append(im)
 
-                video_img = []
-                visual_obs = env._get_observations()
-                for cam_name in camera_names:
-                    # im_og = env.sim.render(
-                    #     height=camera_height, width=camera_width, camera_name=cam_name
-                    # )[::-1]
-                    # pdb.set_trace()
-                    # im = env.sim.render(
-                    #     height=camera_height, width=camera_width, camera_name=cam_name
-                    # )[::-1]
-                    # 
-                    im = visual_obs[cam_name+'_image']
-                    # flip im, currently it is upside down
-                    im = np.flip(im, axis=0)
-                    # pdb.set_trace()
-                    video_img.append(im)
+            left_image_queue.append(video_img[0])
+            right_image_queue.append(video_img[1])
+            gripper_image_queue.append(video_img[2])
 
+            while(len(left_image_queue)) < self.payload_cfg.task.img_obs_horizon:
                 left_image_queue.append(video_img[0])
                 right_image_queue.append(video_img[1])
                 gripper_image_queue.append(video_img[2])
 
-                while(len(left_image_queue)) < self.payload_cfg.task.img_obs_horizon:
-                    left_image_queue.append(video_img[0])
-                    right_image_queue.append(video_img[1])
-                    gripper_image_queue.append(video_img[2])
+            batch = self.convert_observations(self.dataset, left_image_queue, right_image_queue, gripper_image_queue, clip_embedding)
+            batch = {key: value.to(self.device, dtype=torch.float32) for key, value in batch.items()}
 
-                batch = self.convert_observations(self.dataset, left_image_queue, right_image_queue, gripper_image_queue, clip_embedding)
-                batch = {key: value.to(self.device, dtype=torch.float32) for key, value in batch.items()}
+            action_pred = self.policy.predict_action(batch)
+            action_pred = ((action_pred.detach().cpu().numpy() + 1) / 2) * (self.dataset.max - self.dataset.min) + self.dataset.min
+            action_pred = np.squeeze(action_pred)
+            action_pred = np.hstack((action_pred, [[0, 0, 0, 0, -1]] * action_pred.shape[0]))
+            action_pred = action_pred[0:action_horizon]
 
-                action_pred = self.policy.predict_action(batch)
-                action_pred = ((action_pred.detach().cpu().numpy() + 1) / 2) * (self.dataset.max - self.dataset.min) + self.dataset.min
-                action_pred = np.squeeze(action_pred)
-                action_pred = np.hstack((action_pred, [[0, 0, 0, 0, -1]] * action_pred.shape[0]))
-                action_pred = action_pred[0:action_horizon]
+            print(i)
 
-                print(i)
+            for step in range(action_pred.shape[0]):
 
-                for step in range(action_pred.shape[0]):
+                env.step(action_pred[step])
 
-                    env.step(action_pred[step])
+                # video render
+                video_img = []
+                visual_obs = env._get_observations()
+                for cam_name in camera_names:
+                    # im = env.sim.render(
+                    #     height=camera_height, width=camera_width, camera_name=cam_name
+                    # )[::-1]
+                    im = visual_obs[cam_name+'_image']
+                    im = np.flip(im, axis=0)
+                    video_img.append(im)
+                    
+                video_img = np.concatenate(
+                    video_img, axis=1
+                )  # concatenate horizontally
+                video_writer.append_data(video_img)
+                # print("video_img", video_img)
+                # plt.imshow(video_img)
+                # plt.axis('off')
+                # plt.show(block=False)
+                # plt.pause(0.00001)
 
-                    # video render
-                    video_img = []
-                    visual_obs = env._get_observations()
-                    for cam_name in camera_names:
-                        # im = env.sim.render(
-                        #     height=camera_height, width=camera_width, camera_name=cam_name
-                        # )[::-1]
-                        im = visual_obs[cam_name+'_image']
-                        im = np.flip(im, axis=0)
-                        video_img.append(im)
-                        
-                    video_img = np.concatenate(
-                        video_img, axis=1
-                    )  # concatenate horizontally
-                    video_writer.append_data(video_img)
-                    # print("video_img", video_img)
-                    # plt.imshow(video_img)
-                    # plt.axis('off')
-                    # plt.show(block=False)
-                    # plt.pause(0.00001)
-
-                    if env._check_success():
-                        break
-                
                 if env._check_success():
                     break
-
-            experiments_data['tasks'][task_name]['experiments'][demo]['status'] = 'done'
+            
             if env._check_success():
-                experiments_data['tasks'][task_name]['experiments'][demo]['success'] = 1
-            else:
-                experiments_data['tasks'][task_name]['experiments'][demo]['success'] = 0
+                break
 
-            print(colored(f"Saved video to {video_path}", "green"))
-            video_writer.close()
+        video_writer.close()
+        print(colored(f"Saved video to {video_path}", "green"))
+        print("success?", env._check_success())
+        success_val= 1 if env._check_success() else 0
 
-            with lock:
-                self.update_json_file(experiment_record, experiments_data)
+        
 
-            env.close()
 
-        pass
+        
+        # close renderer
+        # env._renderer.close()
+        env.close()
+        return success_val
 
 
 @hydra.main(

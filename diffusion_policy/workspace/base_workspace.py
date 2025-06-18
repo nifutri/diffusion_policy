@@ -112,11 +112,13 @@ class BaseWorkspace:
         return pathlib.Path(self.output_dir).joinpath('checkpoints', f'{tag}.ckpt')
 
     def load_payload(self, payload, exclude_keys=None, include_keys=None, **kwargs):
+        
         if exclude_keys is None:
             exclude_keys = tuple()
         if include_keys is None:
             include_keys = payload['pickles'].keys()
-
+        # import pdb; pdb.set_trace()
+        # [keyname for keyname, value in payload['state_dicts']['model']]
         for key, value in payload['state_dicts'].items():
             if key not in exclude_keys:
                 self.__dict__[key].load_state_dict(value, **kwargs)
@@ -133,6 +135,7 @@ class BaseWorkspace:
         else:
             path = pathlib.Path(path)
         payload = torch.load(path.open('rb'), pickle_module=dill, **kwargs)
+        # exclude_keys = ['optimizer', 'scheduler']
         self.load_payload(payload, 
             exclude_keys=exclude_keys, 
             include_keys=include_keys)

@@ -161,6 +161,7 @@ class FunctionalPredictor(AbstractPredictor):
         """
         eps = 1e-8
         length = training_data.shape[-1]
+        # import pdb; pdb.set_trace()
         if self.modulation_type == ModulationType.Const:
             modulation_trajectory = np.ones((1, length)) / length
         elif self.modulation_type == ModulationType.Stdev:
@@ -197,4 +198,5 @@ class FunctionalPredictor(AbstractPredictor):
                 )
         else:
             raise (NotImplementedError)
+        # pdb.set_trace()
         return modulation_trajectory

@@ -125,6 +125,7 @@ class InMemoryVideoDataset(Dataset):
         lang_model: nn.Module,
         mode: str,
         data_fraction: float,
+        human_path: Optional[str] = None,
     ):
         super().__init__()
 
@@ -144,6 +145,10 @@ class InMemoryVideoDataset(Dataset):
         self.aug = aug
 
         self.lang_model = lang_model
+
+        self.human_path = human_path
+        if self.human_path is None:
+            self.human_path = 'datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5'
 
         # self.clip_mean = [0.48145466, 0.4578275, 0.40821073]
         # self.clip_std = [0.26862954, 0.26130258, 0.27577711]
@@ -174,7 +179,9 @@ class InMemoryVideoDataset(Dataset):
             ])
 
         self.task_list = list(tasks.keys())
-        self.datasets, self.hdf5_datasets = self.get_dataset_file(self.task_list)
+        print("Task list:", self.task_list)
+        print("loading dataset from path:", self.human_path)
+        self.datasets, self.hdf5_datasets = self.get_dataset_file(self.task_list, self.human_path)
 
         self.indexed_demos = []
         for task_index, task_name in enumerate(self.task_list):
@@ -252,7 +259,7 @@ class InMemoryVideoDataset(Dataset):
         with h5py.File(h5_file, "r") as f:
             return recursive_load(f)
     
-    def get_dataset_file(self, task_list):
+    def get_dataset_file(self, task_list, human_path):
         datasets = []
         hdf5_datasets = []
 
@@ -261,8 +268,10 @@ class InMemoryVideoDataset(Dataset):
                 continue
 
             # human_path = "datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im256_randcams.hdf5"
-            human_path = "datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5"
+            # human_path = "datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5"
             # human_path = "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/2024-04-24/demo_gentex_im128_randcams_im256.hdf5"
+            # human_path = "dagger_full_constant_time.hdf5"
+            # human_path = 'data/experiments/train_diffusion_unet_clip_train_closedrawer_fd_scores_original_env/constant_time_band/processed_dagger_data/combined_demo_im256.hdf5'
 
             in_memory_data = self.load_hdf5_into_memory(human_path)
 

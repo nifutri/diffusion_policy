@@ -151,7 +151,7 @@ def get_metric(y_true, y_pred):
 
 
 
-def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=False, CPband=True, suffix=''):
+def get_detection_with_plot(log_probs, successes, alpha=0.01, lb=False, CPband=True, suffix=''):
     
 
     """Detect anomalies using prediction bands and create visualization plots.
@@ -314,17 +314,11 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
         log_prob_test_scores = log_probs_test_plt[test_idx]
         success = successes_test_plt[test_idx]
 
-        observation_frames = img_frames[global_indices_of_test[test_idx]]
         
         CP_upper_band = target_traj
         for t in range(len(log_prob_test_scores)):
             if log_prob_test_scores[t] > CP_upper_band[t]:
-                if t < len(observation_frames):
-                    img= observation_frames[t]
-                else:
-                    img = observation_frames[-1]
-                # pdb.set_trace()
-                
+
                 if success == 0: # if failed, then correct detection
                     num_TP += 1
                     # fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)
@@ -361,7 +355,7 @@ def get_detection_with_plot(log_probs, successes, img_frames, alpha=0.01, lb=Fal
     print(f'### True Negative Rate (TNR): {TNR}')
     print(f'### Accuracy: {accuracy}')
     print(f'### Weighted Accuracy: {accuracy_weighted}')
-    
+    print("CP_upper_band", CP_upper_band)
     return        
 
 
@@ -489,49 +483,12 @@ def main():
     task_name = 'closedrawer'
     data_folder = 'data/experiments/train_diffusion_unet_clip_train_closedrawer_fd_scores_original_env/'
 
-    successes = []
+    successes = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
     all_log_probs = []
-    N_rollouts = 50
-    all_images = []
-    for demo_num in range(N_rollouts):
-        dataset_path_robocasa = data_folder+f'CloseDrawer_{demo_num}_fd_scores.pkl'
-        with open(dataset_path_robocasa, "rb") as pickle_file:
-            data = pickle.load(pickle_file)
-        
-        for demo_key in data['tasks']['CloseDrawer']['experiments']:
-            scores = data['tasks']['CloseDrawer']['experiments'][demo_key]['logpzo_scores']
-            scores = [elem.detach().cpu().numpy()[0] for elem in scores]
-            success = data['tasks']['CloseDrawer']['experiments'][demo_key]['success']
-            success_at_time = data['tasks']['CloseDrawer']['experiments'][demo_key]['success_at_times']
-            img_obs = data['tasks']['CloseDrawer']['experiments'][demo_num]['img_observations']
-            img_frames = []
-            scores_filtered = []
-            for i in range(len(scores)):
-                if i<len(scores)-1 and scores[i] == scores[i+1]:
-                    break
-                scores_filtered.append(scores[i])
-            scores = scores_filtered
-
-            for t in range(len(scores)):
-                leftcam, rightcam, grippercam = img_obs[t]
-                leftcam = leftcam[0,0,:].detach().cpu().numpy()
-                rightcam = rightcam[0,0,:].detach().cpu().numpy()
-                grippercam = grippercam[0,0,:].detach().cpu().numpy()
-                leftcam_rearrange = np.swapaxes(leftcam, 0,-1)
-                rightcam_rearrange = np.swapaxes(rightcam, 0,-1)
-                grippercam_rearrange = np.swapaxes(grippercam, 0,-1) 
-                
-                # rotate 90 degrees clockwise
-                leftcam_rearrange = np.rot90(leftcam_rearrange, -1)
-                rightcam_rearrange = np.rot90(rightcam_rearrange, -1)
-                grippercam_rearrange = np.rot90(grippercam_rearrange, -1)
-                
-                combined_frame = np.concatenate([leftcam_rearrange, rightcam_rearrange, grippercam_rearrange], axis=1)
-                img_frames.append(combined_frame)
-
-            all_log_probs.append(scores)
-            successes.append(success)
-            all_images.append(img_frames)
+    import pickle
+    with open('bike_logprobs.pkl', 'rb') as file:
+        all_log_probs = pickle.load(file)
 
     max_length = max(len(log_probs) for log_probs in all_log_probs)
     print("max_length", max_length)
@@ -554,7 +511,7 @@ def main():
     # pdb.set_trace()
     # plot_all_scores(all_log_probs, successes)
 
-    get_detection_with_plot(log_probs, successes, all_images, alpha=0.1)
+    get_detection_with_plot(log_probs, successes, alpha=0.1)
     
 if __name__ == "__main__":
     main()

@@ -4,8 +4,7 @@ defaults:
 
 name: train_diffusion_unet_clip
 experiment_tag: ST_OOD_DAgger
-
-_target_: diffusion_policy.workspace.extract_obs_embeds_diffusion_unet_clip_workspace.ExtractObsDiffusionUnetImageWorkspace
+_target_: diffusion_policy.workspace.train_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -15,8 +14,6 @@ policy:
   _target_: diffusion_policy.policy.diffusion_unet_clip_policy.DiffusionUnetTimmPolicy
 
   shape_meta: ${shape_meta}
-
-  
   
   noise_scheduler:
     _target_: diffusers.DDIMScheduler
@@ -98,8 +95,8 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 64
-  num_workers: 32
+  batch_size: 48
+  num_workers: 24
   shuffle: True
   pin_memory: True
   persistent_workers: True
@@ -136,10 +133,6 @@ training:
   max_val_steps: null
   # misc
   tqdm_interval_sec: 1.0
-  # checkpoint for FD
-  FD_base_policy_ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/checkpoints/latest.ckpt
-  FD_save_obs_embeds_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/obs_embeds.pt
-  eval_num_inference_steps: 50
 
 logging:
   project: clip
@@ -165,9 +158,9 @@ checkpoint:
 
 hydra:
   job:
-    override_dirname: ${name}
+    override_dirname: ${experiment_tag}_${name}
   run:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/demo_obs_embeds
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
   sweep:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/demo_obs_embeds
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
     subdir: ${hydra.job.num}

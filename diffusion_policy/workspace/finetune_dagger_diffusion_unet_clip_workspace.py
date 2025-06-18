@@ -36,24 +36,6 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 import pdb
 
-# PnPSinkToCounter: kitchen_pnp/PnPSinkToCounter/2024-04-26_2 
-# OpenSingleDoor: kitchen_doors/OpenSingleDoor/2024-04-24 
-# OpenDrawer: kitchen_drawer/OpenDrawer/2024-05-03 
-# TurnOnStove: kitchen_stove/TurnOnStove/2024-05-02
-# TurnOnSinkFaucet: kitchen_sink/TurnOnSinkFaucet/2024-04-25 
-# CoffeePressButton: kitchen_coffee/CoffeePressButton/2024-04-25 
-# CoffeeServeMug: kitchen_coffee/CoffeeServeMug/2024-05-01
-TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
-                           'PnPSinkToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_im256.hdf5",
-                           'OpenSingleDoor': "../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
-                           'OpenDrawer': "../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/OpenDrawer/2024-05-03/demo_gentex_im128_randcams_im256.hdf5",
-                           'CloseDrawer': "../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5",
-                           'TurnOnStove': "../robocasa/datasets_first/v0.1/single_stage/kitchen_stove/TurnOnStove/2024-05-02/demo_gentex_im128_randcams_im256.hdf5",
-                           'TurnOnSinkFaucet': "../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
-                           'CoffeePressButton': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeePressButton/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
-                            'CoffeeServeMug': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams_im256.hdf5",
-                           }
-
 class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
@@ -121,17 +103,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         )
 
         # resume training
-        if cfg.training.resume:
-            lastest_ckpt_path = self.get_checkpoint_path()
-            if lastest_ckpt_path.is_file():
-                accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path)
-
-        # Read task name and configure human_path and tasks
-        task_name = cfg.task.name
-        cfg.task.dataset.tasks = {task_name: None}
-        cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
-
+        # if cfg.training.resume:
+        # if lastest_ckpt_path.is_file():
         # configure dataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         # import pdb; pdb.set_trace()
@@ -151,6 +124,15 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             # however huggingface diffusers steps it every batch
             last_epoch=self.global_step-1
         )
+
+        lastest_ckpt_path = 'data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/epoch_350_step_28079.ckpt'
+        
+        accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
+        self.load_checkpoint(path=lastest_ckpt_path)
+
+        
+
+        
 
         # configure ema
         ema: EMAModel = None

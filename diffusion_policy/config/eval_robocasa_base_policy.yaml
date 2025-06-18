@@ -1,9 +1,13 @@
-ckpt_folder: train_diffusion_unet_clip_train_closedrawer_constant_time_dagger_450
-# ckpt_path: data/outputs/2025.06.04/${ckpt_folder}/checkpoints/epoch_350_step_28079.ckpt
-ckpt_path: data/outputs/01.34.33_{name}_train_constant_time_dagger_closedrawer/01.34.33/checkpoints/epoch_450_step_36461.ckpt
-task_name: ${ckpt_folder}_original_env
 
-name: eval_diffusion_unet_clip
+experiment_name: train_diffusion_unet_clip
+experiment_tag: ST_OOD_DAgger
+
+ckpt_folder: data/outputs/${experiment_tag}_${experiment_name}_${task_name}/base_policy
+# ckpt_path: data/outputs/2025.06.04/${ckpt_folder}/checkpoints/epoch_350_step_28079.ckpt
+ckpt_path: ${ckpt_folder}/checkpoints/latest.ckpt
+task_name: test # to be set by command line
+
+name: train_diffusion_unet_clip
 _target_: diffusion_policy.workspace.eval_diffusion_unet_clip_workspace_original_env.EvalDiffusionUnetImageWorkspace
 
 num_inference_steps: 50
@@ -15,14 +19,14 @@ num_experiments: 50
 execution_horizon: 16
 
 number_of_tasks: 50
-max_traj_len: 1500
+max_traj_len: 1000
 dataset_mode: "test"
 
 hydra:
   job:
     override_dirname: ${name}
   run:
-    dir: data/experiments/${task_name}
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/eval_base_policy
   sweep:
-    dir: data/experiments/${task_name}
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/eval_base_policy
     subdir: ${hydra.job.num}

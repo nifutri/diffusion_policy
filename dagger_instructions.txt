@@ -1,0 +1,110 @@
+While an ideal DAgger continual learning system would simply run through a single script, 
+the long training times of diffusion policy and other imitation learning policies on an
+increasingly large set of demonstrations makes having a single script less than ideal for debugging.
+
+DAgger is thus run through a series of scripts.
+
+$ conda activate robocasa_diffusion_policy_umi
+
+0. Choose Task:
+PnPSinkToCounter: kitchen_pnp/PnPSinkToCounter/2024-04-26_2 
+OpenSingleDoor: kitchen_doors/OpenSingleDoor/2024-04-24 
+OpenDrawer: kitchen_drawer/OpenDrawer/2024-05-03 
+TurnOnStove: kitchen_stove/TurnOnStove/2024-05-02
+TurnOnSinkFaucet: kitchen_sink/TurnOnSinkFaucet/2024-04-25 
+CoffeePressButton: kitchen_coffee/CoffeePressButton/2024-04-25 
+CoffeeServeMug: kitchen_coffee/CoffeeServeMug/2024-05-01
+
+1. Replay the Robocasa dataset for your task to get 256x256 image observations, rather than 128x128.
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/{dataset filepath}/demo_gentex_im128_randcams.hdf5
+
+For the above tasks
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/OpenDrawer/2024-05-03/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_stove/TurnOnStove/2024-05-02/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeePressButton/2024-04-25/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams.hdf5
+
+
+2. Training a base policy: (horizon 1)
+This requires the base workspace to be the default UMI DP workspace:
+train_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace. Finetuning will have its own.
+
+
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 
+python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='PnPSinkToCounter'
+
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='OpenSingleDoor'
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='CoffeeServeMug'
+
+# second half
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='TurnOnStove'
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='TurnOnSinkFaucet'
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='CoffeePressButton'
+
+
+
+
+3. Evaluate your base policy - can merge this step with 6
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=eval_robocasa_base_policy task_name='OpenSingleDoor'
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=eval_robocasa_base_policy task_name='CoffeeServeMug'
+CUDA_VISIBLE_DEVICES=0 python evaluate.py --config-name=eval_robocasa_base_policy task_name='PnPSinkToCounter'
+
+
+Because of the rendering issue, I'm considering a much more onscreen, but slower approach.
+CUDA_VISIBLE_DEVICES=0 python evaluate.py --config-name=onscreen_eval_robocasa_base_policy task_name='OpenSingleDoor'
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=onscreen_eval_robocasa_base_policy task_name='CoffeeServeMug'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=onscreen_eval_robocasa_base_policy task_name='PnPSinkToCounter'
+
+
+
+
+4. Get obs encodings fpr FAIL-Detect
+CUDA_VISIBLE_DEVICES=0 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='OpenSingleDoor'
+CUDA_VISIBLE_DEVICES=1 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='CoffeeServeMug'
+CUDA_VISIBLE_DEVICES=2 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='PnPSinkToCounter'
+CUDA_VISIBLE_DEVICES=0 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='TurnOnStove'
+CUDA_VISIBLE_DEVICES=1 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='TurnOnSinkFaucet'
+CUDA_VISIBLE_DEVICES=2 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='CoffeePressButton'
+
+
+
+5. Train FAIL-Detect Score Networks
+CUDA_VISIBLE_DEVICES=0 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='OpenSingleDoor'
+CUDA_VISIBLE_DEVICES=1 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='CoffeeServeMug'
+CUDA_VISIBLE_DEVICES=2 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='PnPSinkToCounter'
+CUDA_VISIBLE_DEVICES=0 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='TurnOnStove'
+CUDA_VISIBLE_DEVICES=1 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='TurnOnSinkFaucet'
+CUDA_VISIBLE_DEVICES=2 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='CoffeePressButton'
+
+
+
+6. Use Score Networks to get observation scores on rollouts
+CUDA_VISIBLE_DEVICES=0 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='OpenSingleDoor'
+CUDA_VISIBLE_DEVICES=1 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='CoffeeServeMug'
+CUDA_VISIBLE_DEVICES=2 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='PnPSinkToCounter'
+CUDA_VISIBLE_DEVICES=0 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='TurnOnStove'
+CUDA_VISIBLE_DEVICES=1 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='TurnOnSinkFaucet'
+CUDA_VISIBLE_DEVICES=2 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='CoffeePressButton'
+
+
+7. Construct CP band from scores
+python get_band_from_scores_multitask.py OpenSingleDoor
+python get_band_from_scores_multitask.py CoffeeServeMug
+python get_band_from_scores_multitask.py PnPSinkToCounter
+python get_band_from_scores_multitask.py TurnOnStove
+python get_band_from_scores_multitask.py TurnOnSinkFaucet
+python get_band_from_scores_multitask.py CoffeePressButton
+
+7. Run DAgger Round 1
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_w_FD_dp_clip.py --config-name=dagger_w_fd_robocasa
+
+
+
+
+
+
+
+
+

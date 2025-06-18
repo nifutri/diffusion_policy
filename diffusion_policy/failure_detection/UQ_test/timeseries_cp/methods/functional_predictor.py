@@ -3,8 +3,8 @@ from typing import Tuple
 
 import numpy as np
 
-from timeseries_cp.methods.abstract_predictor import AbstractPredictor
-from timeseries_cp.utils.data_utils import RegressionType, regress
+from diffusion_policy.failure_detection.UQ_test.timeseries_cp.methods.abstract_predictor import AbstractPredictor
+from diffusion_policy.failure_detection.UQ_test.timeseries_cp.utils.data_utils import RegressionType, regress
 
 
 class ModulationType(Enum):
@@ -56,7 +56,7 @@ class FunctionalPredictor(AbstractPredictor):
         length = training_data.shape[-1]
         assert length == calibration_data.shape[-1]
         assert 0.0 < alpha < 1.0
-
+        import pdb; pdb.set_trace()
         prediction_trajectory = regress(training_data, self.regression_type)
         modulation_trajectory = self._get_modulation_trajectory(
             training_data, prediction_trajectory, alpha
@@ -112,7 +112,7 @@ class FunctionalPredictor(AbstractPredictor):
             training_data, prediction_trajectory, alpha
         )
 
-        if lower_bound:
+        if not lower_bound:
             calibration_scores = [
                 np.max(
                     (calibration_trajectory - prediction_trajectory)
@@ -128,6 +128,8 @@ class FunctionalPredictor(AbstractPredictor):
                 )
                 for calibration_trajectory in calibration_data
             ]
+
+        # import pdb; pdb.set_trace()
         band_width = np.quantile(calibration_scores, 1 - alpha)
         # calibration_size = len(calibration_scores)
         # band_width = np.sort(calibration_scores)[
