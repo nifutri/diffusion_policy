@@ -41,6 +41,59 @@ import pickle
 # import cv2
 # import robocasa.utils.eval_utils as EvalUtils
 
+def create_interactive_eval_env_modified(
+    env_name,
+    # robosuite-related configs
+    robots="PandaMobile",
+    controllers="OSC_POSE",
+    camera_names=[
+        "robot0_agentview_left",
+        "robot0_agentview_right",
+        "robot0_eye_in_hand",
+    ],
+    camera_widths=256,
+    camera_heights=256,
+    seed=None,
+    # robocasa-related configs
+    obj_instance_split="B",
+    generative_textures=None,
+    randomize_cameras=False,
+    layout_and_style_ids=((1, 1), (2, 2), (4, 4), (6, 9), (7, 10)),
+    controller_configs=None,
+    id_selection=None,
+):
+    # controller_configs = load_controller_config(default_controller=controllers)   # somehow this line doesn't work for me
+
+    # layout_and_style_ids = (layout_and_style_ids[id_selection],)
+
+    env_kwargs = dict(
+        env_name=env_name,
+        robots=robots,
+        controller_configs=controller_configs,
+        camera_names=camera_names,
+        camera_widths=camera_widths,
+        camera_heights=camera_heights,
+        has_renderer=True,
+        has_offscreen_renderer=True,
+        ignore_done=True,
+        use_object_obs=True,
+        use_camera_obs=True,
+        camera_depths=False,
+        # seed=seed,
+        renderer = 'mjviewer',
+        render_camera="robot0_agentview_left",
+        obj_instance_split=obj_instance_split,
+        generative_textures=generative_textures,
+        randomize_cameras=randomize_cameras,
+        # layout_and_style_ids=layout_and_style_ids,
+        translucent_robot=False,
+    )
+    
+
+    env = robosuite.make(**env_kwargs)
+    # pdb.set_trace()
+    return env, env_kwargs
+
 def create_env(dataset_path, env_meta, shape_meta, enable_render=True):
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
@@ -95,6 +148,7 @@ def logpZO_UQ(baseline_model, observation, action_pred = None, task_name = 'squa
         logpZO = observation.reshape(len(observation), -1).pow(2).sum(dim=-1)
     return logpZO
 
+
 class DAggerRobocasaImageRunner(BaseImageRunner):
     """
     Robocasa envs also enforces number of steps.
@@ -103,6 +157,8 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
     def __init__(self, 
             output_dir,
             dataset_path,
+            task_name,
+            controller_configs,
             shape_meta:dict,
             max_steps=400,
             n_obs_steps=2,
@@ -124,6 +180,8 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         super().__init__(output_dir)
 
         self.device = device
+        self.task_name = task_name
+        self.controller_configs = controller_configs
 
         # Setup spacemouse for teleop
         self.n_dagger_rollouts = n_dagger_rollouts
@@ -141,7 +199,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
 
         # read from dataset
         # pdb.set_trace()
-        dataset_path = 'datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5'
+        # dataset_path = 'datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5'
         env_meta = get_env_metadata_from_dataset(dataset_path)
         self.dataset_path = dataset_path
         # disable object state observation
@@ -156,7 +214,10 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         # self.robomimic_env
         self.env_meta = env_meta
         self.shape_meta = shape_meta
-        robomimic_env, robomimic_env_meta = create_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
+        # robomimic_env, robomimic_env_meta = create_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
+        robomimic_env, robomimic_env_meta =  create_interactive_eval_env_modified(env_name=self.task_name, controller_configs=self.controller_configs)
+        
+        
         robomimic_env = VisualizationWrapper(robomimic_env)
         self.env_info = json.dumps(robomimic_env_meta)
         # pdb.set_trace()
@@ -289,9 +350,9 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         # ax.set_xlim(0, 60)
 
         # Initialize figure with 2 subplots: left (plot), right (text)
-        if dagger_ep_idx == 0:
-            fig, (self.ax_plot, self.ax_text) = plt.subplots(1, 2, figsize=(10, 4), gridspec_kw={'width_ratios': [3, 1]})
-            plt.subplots_adjust(wspace=0.4)
+        # if dagger_ep_idx == 0:
+        #     fig, (self.ax_plot, self.ax_text) = plt.subplots(1, 2, figsize=(10, 4), gridspec_kw={'width_ratios': [3, 1]})
+        #     plt.subplots_adjust(wspace=0.4)
 
         # Plot band
         CP_band = list(CP_band)
@@ -299,27 +360,30 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
             CP_band.append(CP_band[-1])
         xaxis = np.arange(len(CP_band))
         upper = CP_band
+        adjusted_cp_band = CP_band[0]
+        gamma = 100
+        adjusted_alpha = 0.2
         lower = np.zeros_like(CP_band)
-        self.ax_plot.fill_between(xaxis, upper, lower, color='skyblue', alpha=0.3, label='CP Band')
+        # self.ax_plot.fill_between(xaxis, upper, lower, color='skyblue', alpha=0.3, label='CP Band')
 
         # Score line
         auton_logpzo_scores = [0]
-        line, = self.ax_plot.plot(range(len(auton_logpzo_scores)), auton_logpzo_scores, color='green', linewidth=2, label='Log PZO')
+        # line, = self.ax_plot.plot(range(len(auton_logpzo_scores)), auton_logpzo_scores, color='green', linewidth=2, label='Log PZO')
 
         # Axes styling
-        self.ax_plot.set_xlabel('Timestep', fontsize=12)
-        self.ax_plot.set_ylabel('Log PZO', fontsize=12)
-        self.ax_plot.set_title('Conformal Prediction and Log PZO', fontsize=14)
-        self.ax_plot.set_ylim(0, 3500)
-        self.ax_plot.set_xlim(0, 60)
-        self.ax_plot.grid(True, linestyle='--', alpha=0.6)
-        self.ax_plot.legend(loc='upper left', fontsize=10)
+        # self.ax_plot.set_xlabel('Timestep', fontsize=12)
+        # self.ax_plot.set_ylabel('Log PZO', fontsize=12)
+        # self.ax_plot.set_title('Conformal Prediction and Log PZO', fontsize=14)
+        # self.ax_plot.set_ylim(0, 3500)
+        # self.ax_plot.set_xlim(0, 60)
+        # self.ax_plot.grid(True, linestyle='--', alpha=0.6)
+        # self.ax_plot.legend(loc='upper left', fontsize=10)
 
-        # Initialize text display on the right
-        self.ax_text.axis('off')
-        text_display = self.ax_text.text(0.5, 0.5, '', fontsize=14, ha='center', va='center')
-        plt.draw()
-        plt.pause(0.1)
+        # # Initialize text display on the right
+        # self.ax_text.axis('off')
+        # text_display = self.ax_text.text(0.5, 0.5, '', fontsize=14, ha='center', va='center')
+        # plt.draw()
+        # plt.pause(0.1)
 
         
         # start rollout
@@ -377,6 +441,8 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         dagger_episode_meta['n_human_timesteps'] = 0
         dagger_episode_meta['n_robot_timesteps'] = 0
         dagger_episode_meta['cp_band'] = CP_band
+        dagger_episode_meta['adjusted_cp_band'] = [adjusted_cp_band]
+        prev_score = 0
 
         while not done:
             # Handle any switches in acting agent
@@ -395,16 +461,29 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                 human_segment_to_length[human_segment_idx] = 0
                 acting_agent = 'human'
                 env.env.env.set_dagger_acting_agent(acting_agent)
+
+                # adjust cp band
+                y_t = prev_score
+                err_t = int(adjusted_cp_band > y_t)
+                adjusted_cp_band = adjusted_cp_band - gamma *  (err_t - (adjusted_alpha))
+                dagger_episode_meta['adjusted_cp_band'].append(adjusted_cp_band)
+                print(f"Adjusted CP band at timestep {self.timestep}: {adjusted_cp_band}")
+                adj_upper = [adjusted_cp_band] * len(lower)
+                # self.ax_plot.fill_between(xaxis, adj_upper, lower, color='red', alpha=0.3, label='CP Band')
+                # # Update plot
+                # plt.draw()
+                # plt.pause(0.1)
+
                 new_controller = "Teleop Policy (Human)" if acting_agent=='human' else "Auto Policy (Robot)"
                 display_controller_cv2(new_controller)
                 human_segment_timestep = 0
                 control_text = "Human acting"
                 control_color = "red"
                 # Update text display
-                text_display.set_text(control_text)
-                text_display.set_color(control_color)
-                plt.draw()
-                plt.pause(0.1)
+                # text_display.set_text(control_text)
+                # text_display.set_color(control_color)
+                # plt.draw()
+                # plt.pause(0.1)
 
             if acting_agent == 'human':
                 # Set active robot
@@ -494,6 +573,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                 # plt.pause(0.001)
                 baseline_metric = logpZO_UQ(self.score_network, action_pred_infos_result['global_cond'])
                 print("LOG PZO", baseline_metric)
+                prev_score = baseline_metric.item()
 
                 # Get CP threshold at current timestep
                 CP_threshold_at_t = CP_band[self.timestep] if self.timestep < len(CP_band) else CP_band[-1]
@@ -504,7 +584,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
 
                 # Update score history
                 auton_logpzo_scores.append(baseline_metric.item())
-                line.set_data(range(len(auton_logpzo_scores)), auton_logpzo_scores)
+                # line.set_data(range(len(auton_logpzo_scores)), auton_logpzo_scores)
 
                 # Decide control status
                 if acting_agent == 'human':
@@ -515,13 +595,16 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     control_color = "green"
 
                 # Update text display
-                text_display.set_text(control_text)
-                text_display.set_color(control_color)
+                # text_display.set_text(control_text)
+                # text_display.set_color(control_color)
 
                 # Refresh plot
-                self.ax_plot.set_xlim(0, max(60, len(auton_logpzo_scores)))
-                plt.draw()
-                plt.pause(0.1)
+                # self.ax_plot.set_xlim(0, max(60, len(auton_logpzo_scores)))
+                # if adjusted_cp_band != CP_band[0]:
+                #     adj_upper = [adjusted_cp_band] * len(lower)
+                #     self.ax_plot.fill_between(xaxis, adj_upper, lower, color='red', alpha=0.3, label='CP Band')
+                # plt.draw()
+                # plt.pause(0.1)
     
                 if baseline_metric > CP_threshold_at_t:
                     print("FAILURE DETECTED: SWITCHING TO HUMAN")
@@ -531,10 +614,10 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     control_color = "red"
                     env.env.env.set_dagger_acting_agent("human")
                     # Update text display
-                    text_display.set_text(control_text)
-                    text_display.set_color(control_color)
-                    plt.draw()
-                    plt.pause(0.1)
+                    # text_display.set_text(control_text)
+                    # text_display.set_color(control_color)
+                    # plt.draw()
+                    # plt.pause(0.1)
                     continue
 
 

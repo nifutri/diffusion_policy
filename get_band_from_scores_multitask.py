@@ -334,10 +334,10 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
                 
                 if success == 0: # if failed, then correct detection
                     num_TP += 1
-                    fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)
-                    plt.imshow(img)
-                    plt.title("TRUE POSITIVE DETECTION", fontsize=fsize)
-                    plt.show()
+                    # fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)
+                    # plt.imshow(img)
+                    # plt.title("TRUE POSITIVE DETECTION", fontsize=fsize)
+                    # plt.show()
                 else:
                     num_FP += 1 # if successful demo, then false positive
                     # fig, ax = plt.subplots(1, 1, figsize=(6, 6), sharex=True, sharey=True)

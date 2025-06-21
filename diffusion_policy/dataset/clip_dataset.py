@@ -383,6 +383,7 @@ class InMemoryVideoDataset(Dataset):
         except Exception as e:
             print(f'sample retrive exception: {e}')
             
+        # pdb.set_trace()
         left_image = torch.tensor(left_image, dtype=torch.float32)
         right_image = torch.tensor(right_image, dtype=torch.float32)
         gripper_image = torch.tensor(gripper_image, dtype=torch.float32)

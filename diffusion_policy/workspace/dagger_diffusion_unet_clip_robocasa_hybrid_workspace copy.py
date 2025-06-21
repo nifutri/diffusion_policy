@@ -70,18 +70,6 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 import pdb
 
-TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
-                           'PnPSinkToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_im256.hdf5",
-                           'OpenSingleDoor': "../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
-                           'OpenDrawer': "../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/OpenDrawer/2024-05-03/demo_gentex_im128_randcams_im256.hdf5",
-                           'CloseDrawer': "../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5",
-                           'TurnOnStove': "../robocasa/datasets_first/v0.1/single_stage/kitchen_stove/TurnOnStove/2024-05-02/demo_gentex_im128_randcams_im256.hdf5",
-                           'TurnOnSinkFaucet': "../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
-                           'CoffeePressButton': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeePressButton/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
-                            'CoffeeServeMug': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams_im256.hdf5",
-                           }
-
-
 class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
@@ -100,15 +88,32 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
 
         self.payload_cfg.task.dataset.mode = cfg.dataset_mode
 
-        # Read task name and configure human_path and tasks
-        task_name = cfg.task_name
-        self.task_name = task_name
         self.payload_cfg.task.dataset.tasks = {
-            task_name: None,
+            # 'CoffeePressButton': None,
+            # 'CoffeeServeMug': None,
+            # 'CoffeeSetupMug': None,
+            # 'CloseDoubleDoor': None,
+            # 'CloseSingleDoor': None,
+            # 'OpenDoubleDoor': None,
+            # 'OpenSingleDoor': None,
+            'CloseDrawer': None,
+            # 'OpenDrawer': None,
+            # 'TurnOffMicrowave': None,
+            # 'TurnOnMicrowave': None,
+            # 'PnPCabToCounter': None,
+            # 'PnPCounterToCab': None,
+            # 'PnPCounterToMicrowave': None,
+            # 'PnPCounterToSink': None,
+            # 'PnPCounterToStove': None,
+            # 'PnPMicrowaveToCounter': None,
+            # 'PnPSinkToCounter': None,
+            # 'PnPStoveToCounter': None,
+            # 'TurnOffSinkFaucet': None,
+            # 'TurnOnSinkFaucet': None,
+            # 'TurnSinkSpout': None,
+            # 'TurnOffStove': None,
+            # 'TurnOnStove': None,
         }
-        self.payload_cfg.task.dataset.tasks = {task_name: None}
-        self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
-        cfg.task.env_runner.dataset_path = TASK_NAME_TO_HUMAN_PATH[task_name]
 
         for key in self.payload_cfg.task.dataset.tasks:
             self.payload_cfg.task.dataset.tasks[key] = {
@@ -133,9 +138,6 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
 
         self.run_dir = HydraConfig.get().run.dir
 
-        self.cp_band_path = cfg.fail_detect.cp_band_path
-        self.n_dagger_episodes = cfg.dagger.num_interactive_rollouts
-
         ## Get logpZO
         input_dim = 7
         net = get_unet(input_dim)
@@ -148,30 +150,13 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
         net.to(self.device)
         self.score_network = net
 
-        with open("datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im256_randcams_100_train_envs.pkl", "rb") as pickle_file:
-            environment_data = pickle.load(pickle_file)
-        max_traj_len = self.cfg['max_traj_len']
-        camera_names = environment_data['env_kwargs']['camera_names']   # ['robot0_agentview_left', 'robot0_agentview_right', 'robot0_eye_in_hand']
-        camera_height = round(self.payload_cfg.task.dataset['frame_height']/self.payload_cfg.task.dataset['aug']['crop'])
-        camera_width = round(self.payload_cfg.task.dataset['frame_width']/self.payload_cfg.task.dataset['aug']['crop'])
-        pred_horizon = self.payload_cfg.task['action_horizon']
-        action_horizon = self.cfg['execution_horizon']
-        controller_configs=environment_data['env_kwargs']['controller_configs']
-
-        environment_data['env_kwargs']['has_renderer'] = True
-        environment_data['env_kwargs']["renderer"] = "mjviewer"
-        # env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
-        # pdb.set_trace()
-
         env_runner = DAggerRobocasaImageRunner(self.run_dir,
             dataset_path = cfg.task.env_runner.dataset_path,
             shape_meta = cfg.task.env_runner.shape_meta,
-            task_name=task_name,
-            controller_configs=controller_configs,
             max_steps=400,
             n_obs_steps=1,
             n_action_steps=16,
-            render_obs_key='robot0_agentview_left_image',
+            render_obs_key='robot0_agentview_right_image',
             fps=10,
             crf=22,
             past_action=False,
@@ -180,8 +165,8 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
             device=self.device,
             n_dagger_rollouts=2,
             teleop_device= 'spacemouse',
-            pos_sensitivity= 2,
-            rot_sensitivity= 2,
+            pos_sensitivity= 4,
+            rot_sensitivity= 4,
             vendor_id= 9583,
             product_id= 50734)
         # pdb.set_trace()
@@ -191,10 +176,10 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
         # self.env_runner.collect_dagger_rollout_data(None, None)
 
         # load cp band from pickle
-        with open(self.cp_band_path, 'rb') as f:
+        with open('CP_band.pkl', 'rb') as f:
             cp_band = pickle.load(f)
 
-        N_dagger_eps = self.n_dagger_episodes
+        N_dagger_eps = 1
 
         # run dagger rollout
         for dagger_ep in range(N_dagger_eps):

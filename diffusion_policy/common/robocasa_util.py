@@ -90,15 +90,69 @@ def create_environment_interactive(dataset_path):
     env_kwargs["obj_instance_split"] = "B"
     env_kwargs["generative_textures"] = None
     env_kwargs["randomize_cameras"] = False
-    env_kwargs["layout_and_style_ids"] = ((1, 1), (2, 2), (4, 4), (6, 9), (7, 10))
-    env_kwargs["layout_ids"] = None
-    env_kwargs["style_ids"] = None
+    env_kwargs["camera_names"] = ["robot0_agentview_left_image", "robot0_agentview_right_image", "robot0_eye_in_hand_image"]
+    # env_kwargs["layout_and_style_ids"] = ((1, 1), (2, 2), (4, 4), (6, 9), (7, 10))
+    # env_kwargs["layout_ids"] = None
+    # env_kwargs["style_ids"] = None
 
     # create the environment
+    pdb.set_trace()
     env = robosuite.make(**env_kwargs)
     
     return env, env_meta
 
+
+def create_interactive_eval_env_modified(
+    env_name,
+    # robosuite-related configs
+    robots="PandaMobile",
+    controllers="OSC_POSE",
+    camera_names=[
+        "robot0_agentview_left",
+        "robot0_agentview_right",
+        "robot0_eye_in_hand",
+    ],
+    camera_widths=256,
+    camera_heights=256,
+    seed=None,
+    # robocasa-related configs
+    obj_instance_split="B",
+    generative_textures=None,
+    randomize_cameras=False,
+    layout_and_style_ids=((1, 1), (2, 2), (4, 4), (6, 9), (7, 10)),
+    controller_configs=None,
+    id_selection=None,
+):
+    # controller_configs = load_controller_config(default_controller=controllers)   # somehow this line doesn't work for me
+
+    layout_and_style_ids = (layout_and_style_ids[id_selection],)
+
+    env_kwargs = dict(
+        env_name=env_name,
+        robots=robots,
+        controller_configs=controller_configs,
+        camera_names=camera_names,
+        camera_widths=camera_widths,
+        camera_heights=camera_heights,
+        has_renderer=True,
+        has_offscreen_renderer=True,
+        ignore_done=True,
+        use_object_obs=True,
+        use_camera_obs=True,
+        camera_depths=False,
+        # seed=seed,
+        renderer = 'mjviewer',
+        # render_camera="robot0_agentview_left",
+        obj_instance_split=obj_instance_split,
+        generative_textures=generative_textures,
+        randomize_cameras=randomize_cameras,
+        # layout_and_style_ids=layout_and_style_ids,
+        translucent_robot=False,
+    )
+    
+
+    env = robosuite.make(**env_kwargs)
+    return env, env_kwargs
 
 class RobocasaAbsoluteActionConverter:
     def __init__(self, dataset_path, demo_idx_to_initial_state, algo_name='bc'):

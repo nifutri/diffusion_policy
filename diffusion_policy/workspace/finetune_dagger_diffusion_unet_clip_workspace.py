@@ -36,6 +36,19 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 import pdb
 
+TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
+                           'PnPSinkToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_im256.hdf5",
+                           'OpenSingleDoor': "../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
+                           'OpenDrawer': "../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/OpenDrawer/2024-05-03/demo_gentex_im128_randcams_im256.hdf5",
+                           'CloseDrawer': "../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5",
+                           'TurnOnStove': "../robocasa/datasets_first/v0.1/single_stage/kitchen_stove/TurnOnStove/2024-05-02/demo_gentex_im128_randcams_im256.hdf5",
+                           'TurnOnSinkFaucet': "../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
+                           'CoffeePressButton': 'data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/merged_combined.hdf5',
+                            'CoffeeServeMug': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams_im256.hdf5",
+                           }
+
+
+
 class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
@@ -48,6 +61,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
+
+        self.task_name = cfg.task_name
 
         # configure model
         self.model: DiffusionUnetTimmPolicy = hydra.utils.instantiate(cfg.policy)
@@ -106,6 +121,15 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         # if cfg.training.resume:
         # if lastest_ckpt_path.is_file():
         # configure dataset
+        # Read task name and configure human_path and tasks
+        task_name = cfg.task_name
+        self.task_name = task_name
+        cfg.task.dataset.tasks = {
+            task_name: None,
+        }
+        cfg.task.dataset.tasks = {task_name: None}
+        cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
+
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         # import pdb; pdb.set_trace()
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
@@ -125,8 +149,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             last_epoch=self.global_step-1
         )
 
-        lastest_ckpt_path = 'data/outputs/2025.06.04/train_diffusion_unet_clip_train_closedrawer/checkpoints/epoch_350_step_28079.ckpt'
-        
+        lastest_ckpt_path = cfg.ckpt_path
         accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
         self.load_checkpoint(path=lastest_ckpt_path)
 

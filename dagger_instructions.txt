@@ -88,7 +88,7 @@ CUDA_VISIBLE_DEVICES=0 python score_rollouts.py --config-name=compute_fd_rollout
 CUDA_VISIBLE_DEVICES=1 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='TurnOnSinkFaucet'
 CUDA_VISIBLE_DEVICES=2 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='CoffeePressButton'
 
-
+TODO: make this flag the constant or time varying band
 7. Construct CP band from scores
 python get_band_from_scores_multitask.py OpenSingleDoor
 python get_band_from_scores_multitask.py CoffeeServeMug
@@ -97,12 +97,20 @@ python get_band_from_scores_multitask.py TurnOnStove
 python get_band_from_scores_multitask.py TurnOnSinkFaucet
 python get_band_from_scores_multitask.py CoffeePressButton
 
+TODO: What is happening with data saving.
 7. Run DAgger Round 1
-HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_w_FD_dp_clip.py --config-name=dagger_w_fd_robocasa
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='OpenSingleDoor'
+
+
+8. Finetune on mixtures
+
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton'
 
 
 
 
+OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/dataset_states_to_obs.py --dataset data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/human_only_demo.hdf5
+OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/dataset_states_to_obs.py --dataset data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/combined_demo.hdf5
 
 
 

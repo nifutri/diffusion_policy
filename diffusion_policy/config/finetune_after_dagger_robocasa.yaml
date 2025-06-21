@@ -3,12 +3,27 @@ defaults:
   - task: train_clip
 
 name: train_diffusion_unet_clip
-experiment_tag: ST_OOD_DAgger
-_target_: diffusion_policy.workspace.train_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
+_target_: diffusion_policy.workspace.finetune_dagger_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
 exp_name: "default"
+
+experiment_name: train_diffusion_unet_clip
+experiment_tag: ST_OOD_DAgger
+ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/checkpoints/latest.ckpt
+
+
+dagger:
+  task_name: ${task_name}
+  base_policy_ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/checkpoints/latest.ckpt
+  save_obs_embeds_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/obs_embeds.pt
+  save_score_network_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/fd_score_network.ckpt
+  cp_band_path: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores/CP_band.pkl
+
+
+finetuning:
+  human_only: False
 
 policy:
   _target_: diffusion_policy.policy.diffusion_unet_clip_policy.DiffusionUnetTimmPolicy
@@ -95,8 +110,8 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 48
-  num_workers: 24
+  batch_size: 64
+  num_workers: 32
   shuffle: True
   pin_memory: True
   persistent_workers: True
@@ -125,8 +140,8 @@ training:
   # training loop control
   # in epochs
   rollout_every: 0
-  checkpoint_every: 100
-  val_every: 100
+  checkpoint_every: 50
+  val_every: 50
   sample_every: 5
   # steps per epoch
   max_train_steps: null
@@ -156,23 +171,11 @@ checkpoint:
 #   run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 #   wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
 
-# hydra:
-#   job:
-#     override_dirname: ${experiment_tag}_${name}
-#   run:
-#     dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
-#   sweep:
-#     dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
-#     subdir: ${hydra.job.num}
-
 hydra:
   job:
-    override_dirname: ${experiment_tag}_${name}
+    override_dirname: ${name}
   run:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_from_scratch
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_w_human_only=${finetuning.human_only}_from_base_after_dagger
   sweep:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_from_scratch
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_w_human_only=${finetuning.human_only}_from_base_after_dagger
     subdir: ${hydra.job.num}
-
-
-    # merged_original_human_only
