@@ -79,13 +79,13 @@ def create_interactive_eval_env_modified(
         use_object_obs=True,
         use_camera_obs=True,
         camera_depths=False,
-        # seed=seed,
+        seed=seed,
         renderer = 'mjviewer',
         render_camera="robot0_agentview_left",
         obj_instance_split=obj_instance_split,
         generative_textures=generative_textures,
         randomize_cameras=randomize_cameras,
-        # layout_and_style_ids=layout_and_style_ids,
+        layout_and_style_ids=layout_and_style_ids,
         translucent_robot=False,
     )
     
@@ -185,8 +185,10 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
 
         # Setup spacemouse for teleop
         self.n_dagger_rollouts = n_dagger_rollouts
-        self.pos_sensitivity = pos_sensitivity
-        self.rot_sensitivity = rot_sensitivity
+        # self.pos_sensitivity = pos_sensitivity
+        # self.rot_sensitivity = rot_sensitivity
+        self.pos_sensitivity = 4
+        self.rot_sensitivity = 4
         self.vendor_id = vendor_id
         self.product_id = product_id
         print(f"Using vendor_id: {self.vendor_id}, product_id: {self.product_id}")
@@ -234,7 +236,22 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
             os.makedirs(processed_dagger_dir)
         self.processed_dagger_dir = processed_dagger_dir
 
+        # set env indicators to transparent
+        # Make indicator sites fully transparent
+        indicators = ['gripper0_right_grip_site', 'gripper0_right_grip_site_cylinder']
+        for indicator_name in indicators:
+            site_id = robomimic_env.env.sim.model.site_name2id(indicator_name)
+            robomimic_env.env.sim.model.site_rgba[site_id] = [1, 0, 0, 0.0]
+
         robomimic_env = DAggerDataCollectionWrapper(robomimic_env, dagger_dir)
+
+        # Make indicator sites fully transparent
+        indicators = ['gripper0_right_grip_site', 'gripper0_right_grip_site_cylinder']
+        for indicator_name in indicators:
+            site_id = robomimic_env.env.sim.model.site_name2id(indicator_name)
+            robomimic_env.env.sim.model.site_rgba[site_id] = [1, 0, 0, 0.0]
+
+        
 
         self.env = MultiStepWrapper(
                 RobocasaImageWrapper(
@@ -268,6 +285,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         self.tqdm_interval_sec = tqdm_interval_sec
         self.steps_per_render = steps_per_render
         self.output_dir = output_dir
+        self.adjusted_cp_band = None
 
     def convert_observations(self, dataset, obs, clip_embedding):
 
@@ -327,11 +345,52 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
             }
 
 
+    def recreate_env(self, idx_seed):
+        self.env.close()
+        robomimic_env, robomimic_env_meta =  create_interactive_eval_env_modified(env_name=self.task_name, seed=idx_seed, controller_configs=self.controller_configs)
+        
+        
+        robomimic_env = VisualizationWrapper(robomimic_env)
+        self.env_info = json.dumps(robomimic_env_meta)
+        # pdb.set_trace()
+        
+        # Make indicator sites fully transparent
+        indicators = ['gripper0_right_grip_site', 'gripper0_right_grip_site_cylinder']
+        for indicator_name in indicators:
+            site_id = robomimic_env.env.sim.model.site_name2id(indicator_name)
+            robomimic_env.env.sim.model.site_rgba[site_id] = [1, 0, 0, 0.0]
+
+        robomimic_env = DAggerDataCollectionWrapper(robomimic_env, self.dagger_dir)
+
+        # Make indicator sites fully transparent
+        indicators = ['gripper0_right_grip_site', 'gripper0_right_grip_site_cylinder']
+        for indicator_name in indicators:
+            site_id = robomimic_env.env.sim.model.site_name2id(indicator_name)
+            robomimic_env.env.sim.model.site_rgba[site_id] = [1, 0, 0, 0.0]
+
+        
+
+        self.env = MultiStepWrapper(
+                RobocasaImageWrapper(
+                    env=robomimic_env,
+                    shape_meta=self.shape_meta,
+                    init_state=None,
+                    render_obs_key=self.render_obs_key
+                ),
+            n_obs_steps=self.n_obs_steps,
+            n_action_steps=self.n_action_steps,
+            max_episode_steps=self.max_steps
+        )
+
+        self.teleop_device.set_env(robomimic_env)
+
+
     def run_interactive_dagger_rollout(self, video_dataset, policy: BaseImagePolicy, score_network, CP_band, dagger_ep_idx, end_ep_idx):
 
         self.video_dataset = video_dataset
         self.score_network = score_network
         self.policy = policy
+        self.recreate_env(dagger_ep_idx)
         env = self.env
 
         # start CP band plot
@@ -360,7 +419,8 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
             CP_band.append(CP_band[-1])
         xaxis = np.arange(len(CP_band))
         upper = CP_band
-        adjusted_cp_band = CP_band[0]
+        if self.adjusted_cp_band is None:
+            self.adjusted_cp_band = CP_band[0]
         gamma = 100
         adjusted_alpha = 0.2
         lower = np.zeros_like(CP_band)
@@ -392,6 +452,25 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         policy.reset()
         self.timestep = 0
         first_switch_to_human_occurred = False
+
+        # Initialize plot
+        if dagger_ep_idx == 0:
+            self.fig, self.ax = plt.subplots()
+            gripper_img = obs['robot0_eye_in_hand_image'][0]
+            gripper_img = np.flipud(gripper_img)  # Flip the image upside down
+            self.img = self.ax.imshow(gripper_img, cmap='gray', vmin=0, vmax=1)
+            plt.ion()  # Turn on interactive mode
+            plt.show()
+        else:
+            gripper_img = obs['robot0_eye_in_hand_image'][0]
+            gripper_img = np.flipud(gripper_img)  # Flip the image upside down
+            self.img.set_data(gripper_img)                
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
+
+
+
+        
 
         # setup teleop
         self.teleop_device.env = env.env.env
@@ -441,7 +520,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         dagger_episode_meta['n_human_timesteps'] = 0
         dagger_episode_meta['n_robot_timesteps'] = 0
         dagger_episode_meta['cp_band'] = CP_band
-        dagger_episode_meta['adjusted_cp_band'] = [adjusted_cp_band]
+        dagger_episode_meta['adjusted_cp_band'] = [self.adjusted_cp_band]
         prev_score = 0
 
         while not done:
@@ -464,11 +543,11 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
 
                 # adjust cp band
                 y_t = prev_score
-                err_t = int(adjusted_cp_band > y_t)
-                adjusted_cp_band = adjusted_cp_band - gamma *  (err_t - (adjusted_alpha))
-                dagger_episode_meta['adjusted_cp_band'].append(adjusted_cp_band)
-                print(f"Adjusted CP band at timestep {self.timestep}: {adjusted_cp_band}")
-                adj_upper = [adjusted_cp_band] * len(lower)
+                err_t = int(self.adjusted_cp_band > y_t)
+                self.adjusted_cp_band = self.adjusted_cp_band - gamma *  (err_t - (adjusted_alpha))
+                dagger_episode_meta['adjusted_cp_band'].append(self.adjusted_cp_band)
+                print(f"Adjusted CP band at timestep {self.timestep}: {self.adjusted_cp_band}")
+                adj_upper = [self.adjusted_cp_band] * len(lower)
                 # self.ax_plot.fill_between(xaxis, adj_upper, lower, color='red', alpha=0.3, label='CP Band')
                 # # Update plot
                 # plt.draw()
@@ -479,13 +558,36 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                 human_segment_timestep = 0
                 control_text = "Human acting"
                 control_color = "red"
+
+                # pdb.set_trace()
+                current_gripper_qpos = self.env.env.env.env.env._get_observations()['robot0_gripper_qpos']
+                closed_gripper_qpos = np.array([ 0.00068734, -0.00048299])
+                distance_to_closed_gripper = np.linalg.norm(current_gripper_qpos - closed_gripper_qpos)
+                # pdb.set_trace()
+                # if distance_to_closed_gripper < 0.001:
+                #     self.teleop_device.single_click_and_hold = True
+                # else:
+                #     self.teleop_device.single_click_and_hold = False
+
+                gripper_input = input("gripper closed? (y/n): ")
+                if gripper_input.lower() == 'y':
+                    self.teleop_device.single_click_and_hold = True
+                elif gripper_input.lower() == 'n':
+                    self.teleop_device.single_click_and_hold = False
                 # Update text display
                 # text_display.set_text(control_text)
                 # text_display.set_color(control_color)
                 # plt.draw()
                 # plt.pause(0.1)
+            gripper_img = obs['robot0_eye_in_hand_image'][0]
+            gripper_img = np.flipud(gripper_img)  # Flip the image upside down
+            self.img.set_data(gripper_img)                
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
 
             if acting_agent == 'human':
+                
+
                 # Set active robot
                 active_robot = env.env.env.robots[self.teleop_device.active_robot]
                 active_arm = self.teleop_device.active_arm
@@ -545,7 +647,8 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     break
 
             else:
-
+                # current_gripper_qpos = np.mean(abs(self.env.env.env.env.env._get_observations()['robot0_gripper_qpos']))
+                # print("current_gripper_qpos", current_gripper_qpos)
                 batch = self.convert_observations(self.video_dataset, obs, clip_embedding)
                 batch = {key: value.to(self.device, dtype=torch.float32) for key, value in batch.items()}
 
@@ -578,6 +681,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                 # Get CP threshold at current timestep
                 CP_threshold_at_t = CP_band[self.timestep] if self.timestep < len(CP_band) else CP_band[-1]
                 print("CP threshold at t", CP_threshold_at_t)
+                print(f"Adjusted CP band: {self.adjusted_cp_band}")
 
                 dagger_episode_meta['obs_list'].append((obs, acting_agent, baseline_metric, CP_threshold_at_t, self.timestep))
                 dagger_episode_meta['action_list'].append((action_pred, acting_agent, self.timestep))
@@ -606,7 +710,7 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                 # plt.draw()
                 # plt.pause(0.1)
     
-                if baseline_metric > CP_threshold_at_t:
+                if baseline_metric > CP_threshold_at_t or baseline_metric > self.adjusted_cp_band:
                     print("FAILURE DETECTED: SWITCHING TO HUMAN")
                     self.teleop_device.is_acting_agent = True
                     first_switch_to_human_occurred = True
@@ -635,8 +739,10 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
             # update pbar
             pbar.update(self.n_action_steps)
         pbar.close()
-        # plt.close()
         print("human_segment_to_length", human_segment_to_length)
+        # Close the figure after loop
+        # plt.ioff()
+        # plt.close(fig)
         
         want_to_save = input("Done with this episode, do you want to save the demo? (y/n): ").lower()
         if want_to_save == 'y':

@@ -8,6 +8,7 @@ from omegaconf import OmegaConf
 import dill
 import torch
 import threading
+import pdb
 
 
 class BaseWorkspace:
@@ -136,6 +137,7 @@ class BaseWorkspace:
             path = pathlib.Path(path)
         payload = torch.load(path.open('rb'), pickle_module=dill, **kwargs)
         # exclude_keys = ['optimizer', 'scheduler']
+        # pdb.set_trace()
         self.load_payload(payload, 
             exclude_keys=exclude_keys, 
             include_keys=include_keys)

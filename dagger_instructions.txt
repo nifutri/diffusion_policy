@@ -97,20 +97,93 @@ python get_band_from_scores_multitask.py TurnOnStove
 python get_band_from_scores_multitask.py TurnOnSinkFaucet
 python get_band_from_scores_multitask.py CoffeePressButton
 
-TODO: What is happening with data saving.
+
 7. Run DAgger Round 1
 HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='OpenSingleDoor'
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='CoffeePressButton'
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='PnPSinkToCounter'
 
-
-8. Finetune on mixtures
-
-CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton'
-
-
-
-
+Might want thism, but Don't need this anymore
 OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/dataset_states_to_obs.py --dataset data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/human_only_demo.hdf5
 OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/dataset_states_to_obs.py --dataset data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/combined_demo.hdf5
+
+
+
+8. Merge datafiles
+python merge_dagger_datasets.py --task_name CoffeePressButton --dataset1 train --dataset2 dagger_episode_0
+
+9. Retraining
+
+SECTION 1. Finetuning on a Single Dataset file
+Dont bother with human-only: CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.human_only=True finetuning.from_scratch=False
+
+
+A. Retrain from Scratch
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.human_only=False finetuning.from_scratch=True
+
+B. Finetune on Aggregated Data, all parameters updated
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.human_only=False finetuning.from_scratch=False
+
+
+C. Finetune on Aggregated Data, Freeze Observation encoder
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.human_only=False finetuning.from_scratch=False finetuning.freeze_obs_encoder=True
+
+
+SECTION 2. Finetuning with batch balancing, multiple datafiles
+D. Finetune with Batch Balanced 25% old data, 75% new data
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_batch_balancing_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.old_sampling_freq=0.25 finetuning.new_sampling_freq=0.75 finetuning.from_scratch=False
+
+E. Finetune with Batch Balanced 50% old data, 50% new data 
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_batch_balancing_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.old_sampling_freq=0.5 finetuning.new_sampling_freq=0.5 finetuning.from_scratch=False
+
+F. Finetune with Batch Balanced 75% old data, 25% new data
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_batch_balancing_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.old_sampling_freq=0.75 finetuning.new_sampling_freq=0.25 finetuning.from_scratch=False
+
+
+SECTION 3: LoRA Finetuning
+G. LoRA Finetuning Noise Predictor with Frozen Obs Encoder
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_lora_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.apply_lora_on_obs_encoder=False finetuning.freeze_obs_encoder=True
+
+H. LoRA Finetuning Noise Predictor with Finetuned Obs Encoder
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_lora_after_dagger_robocasa.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.apply_lora_on_obs_encoder=True
+
+
+D. Finetuning with Orthogonal Projection
+
+
+E. Finetuning with DriftDAgger
+I may skip this, because the rank scheduler is over multiple demos being added in one by one, I've only got one batch here.
+
+
+10. Evaluate after finetuning
+Section 1: Evaluating all but LoRA
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='finetune_w_human_onlyTrue_from_base_after_dagger' task_name='CoffeePressButton' dagger.ckpt_name='latest'
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='finetune_w_human_onlyTrue_from_base_after_dagger' task_name='CoffeePressButton' dagger.ckpt_name='epoch_250_step_13972'
+
+Section 2: Evaluating LoRA Models specifically
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='finetune_w_human_onlyTrue_from_base_after_dagger' task_name='CoffeePressButton' dagger.ckpt_name='epoch_250_step_13972'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

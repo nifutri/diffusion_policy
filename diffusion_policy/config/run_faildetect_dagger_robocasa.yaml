@@ -21,8 +21,8 @@ fail_detect:
   cp_band_path: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores/CP_band.pkl
 
 dagger:
-  round: 0
-  num_interactive_rollouts: 1
+  round: 1
+  num_interactive_rollouts: 50
 
 num_inference_steps: 50
 
@@ -33,7 +33,7 @@ num_experiments: 50
 execution_horizon: 16
 
 number_of_tasks: 50
-max_traj_len: 700
+max_traj_len: 1500
 dataset_mode: "test"
 
 task:

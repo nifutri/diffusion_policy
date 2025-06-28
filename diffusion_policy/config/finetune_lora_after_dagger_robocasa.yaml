@@ -3,7 +3,7 @@ defaults:
   - task: train_clip
 
 name: train_diffusion_unet_clip
-_target_: diffusion_policy.workspace.finetune_dagger_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
+_target_: diffusion_policy.workspace.finetune_lora_dagger_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -24,13 +24,12 @@ dagger:
 
 finetuning:
   dagger_episode_folder: 'dagger_episode_0'
-  human_only: False
   from_scratch: False
-  use_only_original: False
+  apply_lora_on_obs_encoder: False
   freeze_obs_encoder: False
 
 policy:
-  _target_: diffusion_policy.policy.diffusion_unet_clip_policy.DiffusionUnetTimmPolicy
+  _target_: diffusion_policy.policy.diffusion_unet_clip_policy_lora.DiffusionUnetTimmPolicyPolicyWithLoRA
 
   shape_meta: ${shape_meta}
   
@@ -116,7 +115,7 @@ ema:
 dataloader:
   batch_size: 64
   num_workers: 32
-  shuffle: True
+  # shuffle: True
   pin_memory: True
   persistent_workers: True
 
@@ -179,10 +178,9 @@ hydra:
   job:
     override_dirname: ${name}
   run:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/${finetuning.dagger_episode_folder}_freezeobs${finetuning.freeze_obs_encoder}_finetune_w_human_only${finetuning.human_only}_useonlyoriginal${finetuning.use_only_original}_fromscratch${finetuning.from_scratch}_after_dagger
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/sanity_adam_ftobs_lora_fix256_scale0.1_${finetuning.dagger_episode_folder}_loraonobs${finetuning.apply_lora_on_obs_encoder}_after_dagger
   sweep:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/${finetuning.dagger_episode_folder}_freezeobs${finetuning.freeze_obs_encoder}_finetune_w_human_only${finetuning.human_only}_useonlyoriginal${finetuning.use_only_original}_fromscratch${finetuning.from_scratch}_after_dagger
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/sanity_adam_ftobs_lora_fix256_scale0.1_${finetuning.dagger_episode_folder}_loraonobs${finetuning.apply_lora_on_obs_encoder}_after_dagger
     subdir: ${hydra.job.num}
-
 
 

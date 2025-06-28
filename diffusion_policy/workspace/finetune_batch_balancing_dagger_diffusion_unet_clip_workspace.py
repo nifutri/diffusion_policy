@@ -35,8 +35,84 @@ from accelerate import Accelerator
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 import pdb
-import time
+from torch.utils.data import DataLoader, Subset
+import itertools
+from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
+# import torchdata
+# print(torchdata.__version__)
+# from torchdata.datapipes.iter import IterableWrapper, SampleMultiplexer
 import json
+import time
+
+from torch.utils.data import DataLoader
+import torch
+from itertools import cycle, islice
+
+class ProportionalBatchLoader:
+    def __init__(self, dataset1, dataset2, p1=0.7, p2=0.3, batch_size=64, **kwargs):
+        assert abs(p1 + p2 - 1.0) < 1e-6, "Proportions must sum to 1."
+
+        self.partial_batch_size_d1 = int(batch_size * p1)
+        self.partial_batch_size_d2 = batch_size - self.partial_batch_size_d1
+        self.batch_size = batch_size
+
+        self.dataset1 = dataset1
+        self.dataset2 = dataset2
+
+        # Create data loaders
+        self.loader1 = DataLoader(dataset1, batch_size=self.partial_batch_size_d1, shuffle=True, **kwargs)
+        self.loader2 = DataLoader(dataset2, batch_size=self.partial_batch_size_d2, shuffle=True, **kwargs)
+
+        # # Initialize infinite iterators
+        # self.iter1 = self._infinite_iterator(self.loader1)
+        # self.iter2 = self._infinite_iterator(self.loader2)
+
+        self.len1 = len(self.loader1)
+        self.len2 = len(self.loader2)
+        self.max_len = max(self.len1, self.len2)
+
+        # Use cycle for the shorter dataset
+        self.iter1 = cycle(self.loader1) if self.len1 < self.len2 else iter(self.loader1)
+        self.iter2 = cycle(self.loader2) if self.len2 < self.len1 else iter(self.loader2)
+
+        self.counter = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.counter >= self.max_len:
+            raise StopIteration
+
+        try:
+            batch1 = next(self.iter1)
+        except StopIteration:
+            self.iter1 = iter(self.loader1)
+            batch1 = next(self.iter1)
+
+        try:
+            batch2 = next(self.iter2)
+        except StopIteration:
+            self.iter2 = iter(self.loader2)
+            batch2 = next(self.iter2)
+
+        self.counter += 1
+
+        combined = {'obs': {},'action': None}
+        # concantenate action tensors, action size is torch.Size([32, 32, 7])
+        combined['action'] = torch.cat([batch1['action'], batch2['action']], dim=0)
+
+        # for key in observations, concatenate the tensors
+        for key in batch1['obs']:
+            # size is torch.Size([32, 1, 3, 224, 224])
+            combined['obs'][key] = torch.cat([batch1['obs'][key], batch2['obs'][key]], dim=0)
+
+        return combined
+
+    def __len__(self):
+        # Return the number of batches in the smaller dataset
+        return self.max_len
+
 
 def get_finetuning_dataset(taskname, dagger_episode_folder='dagger_episode_0'):
     TASK_NAME_TO_ORIGINAL_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
@@ -148,6 +224,9 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             init_kwargs={"wandb": wandb_cfg}
         )
 
+        self.start_training_time = time.time()
+        self.wall_clock_times = {'start': self.start_training_time}
+        
         # resume training
         # if cfg.training.resume:
         # if lastest_ckpt_path.is_file():
@@ -163,42 +242,54 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         dagger_episode_folder = cfg.finetuning.dagger_episode_folder
 
         original_dataset, merged_dataset, human_only_dataset = get_finetuning_dataset(task_name, dagger_episode_folder)
-        if cfg.finetuning.human_only:
-            cfg.task.dataset.human_path = human_only_dataset
-        else:
-            cfg.task.dataset.human_path = merged_dataset
-
-        if cfg.finetuning.use_only_original:
-            cfg.task.dataset.human_path = original_dataset
-
-        dataset = hydra.utils.instantiate(cfg.task.dataset)
-
-        # testing
-        # cfg.task.dataset.human_path = original_dataset
-        # original_dataset = hydra.utils.instantiate(cfg.task.dataset)
-
-        # og_img = original_dataset[100]['obs']['left_image'][0]
-        # # move channels to last dimension
-        # og_img = og_img.permute(1, 2, 0).numpy()
-        # plt.imshow(og_img)
         
+        cfg.task.dataset.human_path = original_dataset
 
-        # cfg.task.dataset.human_path = human_only_dataset
-        # human_only_dataset = hydra.utils.instantiate(cfg.task.dataset)
+        original_dataset = hydra.utils.instantiate(cfg.task.dataset)
+        # original_train_dataloader = DataLoader(original_dataset, **cfg.dataloader)
+        original_proportion = cfg.finetuning.old_sampling_freq
 
-        # ho_img = human_only_dataset[100]['obs']['left_image'][0]
-        # # move channels to last dimension
-        # ho_img = ho_img.permute(1, 2, 0).numpy()
-        # plt.imshow(ho_img)
+        cfg.task.dataset.human_path = human_only_dataset
+        human_dataset = hydra.utils.instantiate(cfg.task.dataset)
+        # human_train_dataloader = DataLoader(human_dataset, **cfg.dataloader)
+        new_human_proportion = cfg.finetuning.new_sampling_freq
 
-        self.start_training_time = time.time()
-        self.wall_clock_times = {'start': self.start_training_time}
+        # Combine with ProportionalBatchLoader
+        train_dataloader = ProportionalBatchLoader(
+            original_dataset,
+            human_dataset,
+            p1=original_proportion,
+            p2=new_human_proportion,
+            batch_size=cfg.dataloader.batch_size,
+            num_workers=cfg.dataloader.num_workers,
+            pin_memory=cfg.dataloader.pin_memory,
+        )
 
 
+
+        # Step 2: Combine them
         # pdb.set_trace()
-        train_dataloader = DataLoader(dataset, **cfg.dataloader)
+        # combined_dataset = ConcatDataset([original_dataset, human_dataset])
 
-        print('train dataset:', len(dataset), ', ' 'train dataloader:', len(train_dataloader))
+        # # Step 3: Create sample weights (equal weight per dataset or customized)
+        # len_orig = len(original_dataset)
+        # len_human = len(human_dataset)
+
+        # # Example: equal weight across datasets
+        # weights = np.concatenate([
+        #     np.ones(len_orig) * (original_proportion),
+        #     np.ones(len_human) * (new_human_proportion)
+        # ])
+
+        # # Normalize to sum to 1 (optional but common)
+        # weights /= weights.sum()
+
+        # sampler = WeightedRandomSampler(weights, num_samples=len(combined_dataset), replacement=False)
+
+        # # Step 4: Create DataLoader
+        # train_dataloader = DataLoader(combined_dataset, sampler=sampler, shuffle=False,  **cfg.dataloader)
+
+        # print('Proportionally weighted train dataloader:', len(train_dataloader))
 
         # configure lr scheduler
         lr_scheduler = get_scheduler(
@@ -219,38 +310,6 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             self.load_checkpoint(path=lastest_ckpt_path)
         else:
             accelerator.print(f"Training from scratch, no checkpoint loaded.")
-
-
-        # for parameter in self.model.parameters(): freeze all but the obs_encoder
-        # pdb.set_trace()
-        if cfg.finetuning.freeze_obs_encoder:
-            accelerator.print("Freezing obs_encoder parameters.")
-            for name, parameter in self.model.named_parameters():
-                if 'obs_encoder' in name:
-                    parameter.requires_grad = False
-                    accelerator.print(f"Freezing parameter: {name}")
-                else:
-                    accelerator.print(f"Unfreezing parameter: {name}")
-
-        # Reset optimizer
-        obs_encorder_lr = cfg.optimizer.lr
-        obs_encorder_params = list()
-        for param in self.model.obs_encoder.parameters():
-            if param.requires_grad:
-                obs_encorder_params.append(param)
-        print(f'obs_encorder params: {len(obs_encorder_params)}')
-        param_groups = [
-            {'params': self.model.model.parameters()},
-            {'params': obs_encorder_params, 'lr': obs_encorder_lr}
-        ]
-        # self.optimizer = hydra.utils.instantiate(
-        #     cfg.optimizer, params=param_groups)
-        optimizer_cfg = OmegaConf.to_container(cfg.optimizer, resolve=True)
-        optimizer_cfg.pop('_target_')
-        self.optimizer = torch.optim.AdamW(
-            params=param_groups,
-            **optimizer_cfg
-        )
 
         # configure ema
         ema: EMAModel = None
@@ -315,6 +374,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         log_path = os.path.join(self.output_dir, 'logs.json.txt')
         with JsonLogger(log_path) as json_logger:
             for local_epoch_idx in range(cfg.training.num_epochs):
+                print("local_epoch_idx", local_epoch_idx)
                 self.model.train()
 
                 step_log = dict()
@@ -324,6 +384,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                     self.model.obs_encoder.requires_grad_(False)
 
                 train_losses = list()
+                train_dataloader.counter = 0
                 with tqdm.tqdm(train_dataloader, desc=f"Training epoch {self.epoch}", 
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                     for batch_idx, batch in enumerate(tepoch):
@@ -465,10 +526,10 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                     # We can't copy the last checkpoint here
                     # since save_checkpoint uses threads.
                     # therefore at this point the file might have been empty!
-                    topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
+                    # topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
 
-                    if topk_ckpt_path is not None:
-                        self.save_checkpoint(path=topk_ckpt_path)
+                    # if topk_ckpt_path is not None:
+                    #     self.save_checkpoint(path=topk_ckpt_path)
 
                     checkpoint_filename = f"{topk_manager.save_dir}/epoch_{self.epoch}_step_{self.global_step}.ckpt"
                     self.save_checkpoint(path=checkpoint_filename)

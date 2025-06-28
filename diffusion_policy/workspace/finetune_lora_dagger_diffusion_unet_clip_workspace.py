@@ -22,6 +22,7 @@ import numpy as np
 import shutil
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.policy.diffusion_unet_clip_policy import DiffusionUnetTimmPolicy
+from diffusion_policy.policy.diffusion_unet_clip_policy_lora import DiffusionUnetTimmPolicyPolicyWithLoRA
 from diffusion_policy.dataset.clip_dataset import InMemoryVideoDataset
 from diffusion_policy.model.vision.clip_obs_encoder import FrozenOpenCLIPImageEmbedder
 from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
@@ -35,8 +36,13 @@ from accelerate import Accelerator
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 import pdb
-import time
+from torch.utils.data import DataLoader, Subset
+import itertools
+from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 import json
+import time
+
+
 
 def get_finetuning_dataset(taskname, dagger_episode_folder='dagger_episode_0'):
     TASK_NAME_TO_ORIGINAL_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
@@ -98,6 +104,12 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         # configure model
         self.model: DiffusionUnetTimmPolicy = hydra.utils.instantiate(cfg.policy)
 
+        # configure lora model
+        self.lora_model = DiffusionUnetTimmPolicyPolicyWithLoRA.from_policy(cfg, self.model)
+        lora_rank = 256
+        run_lora_on_obs_encoder = cfg.finetuning.apply_lora_on_obs_encoder
+        self.lora_model.inject_lora(run_lora_on_obs_encoder,lora_rank)
+
         self.ema_model: DiffusionUnetTimmPolicy = None
         if cfg.training.use_ema:
             self.ema_model = copy.deepcopy(self.model)
@@ -111,12 +123,12 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             obs_encorder_lr *= 0.1
             print('==> reduce pretrained obs_encorder\'s lr')
         obs_encorder_params = list()
-        for param in self.model.obs_encoder.parameters():
+        for param in self.lora_model.obs_encoder.parameters():
             if param.requires_grad:
                 obs_encorder_params.append(param)
         print(f'obs_encorder params: {len(obs_encorder_params)}')
         param_groups = [
-            {'params': self.model.model.parameters()},
+            {'params': self.lora_model.model.parameters()},
             {'params': obs_encorder_params, 'lr': obs_encorder_lr}
         ]
         # self.optimizer = hydra.utils.instantiate(
@@ -127,6 +139,11 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             params=param_groups,
             **optimizer_cfg
         )
+        # self.optimizer = torch.optim.Adam(
+        #     params=self.lora_model.model.parameters(),
+        #     lr=1e-3,
+        #     weight_decay=self.cfg.optimizer.weight_decay
+        # )
 
         # configure training state
         self.global_step = 0
@@ -135,6 +152,78 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         # do not save optimizer if resume=False
         if not cfg.training.resume:
             self.exclude_keys = ['optimizer']
+
+        # self.model = DiffusionUnetTimmPolicyPolicyWithLoRA.from_policy(self.cfg, self.model)
+        # # # self.ema_lora_model = DiffusionUnetTimmPolicyPolicyWithLoRA.from_policy(self.cfg, self.ema_model)
+        # lora_rank = 256
+        # run_lora_on_obs_encoder = False
+        # self.model.inject_lora(run_lora_on_obs_encoder,lora_rank)
+        # self.ema_lora_model.inject_lora(run_lora_on_obs_encoder,lora_rank)
+
+    def inject_low_rank_adapter_to_learner(self, len_dataloader):
+        
+        # obs_encoder = self.model.obs_encoder
+        # noise_prediction_network = self.model.model
+        # create LoRA policy
+        # pdb.set_trace()
+        # self.lora_model = DiffusionUnetTimmPolicyPolicyWithLoRA.from_policy(self.cfg, self.model)
+        self.lora_model.model = self.model.model
+        self.lora_model.obs_encoder = self.model.obs_encoder
+        lora_rank = 256
+        run_lora_on_obs_encoder = self.cfg.finetuning.apply_lora_on_obs_encoder
+        self.lora_model.inject_lora(run_lora_on_obs_encoder,lora_rank)
+        self.lora_model.freeze_main_network(run_lora_on_obs_encoder)
+        
+        # self.model = self.model
+        # main_params, lora_params = self.learner.get_main_and_lora_params()
+        self.update_optimizer_parameters()
+        # self.update_scheduler(len_dataloader)
+        # pdb.set_trace()
+        # Do the same for ema_model
+        # self.ema_lora_model = DiffusionUnetTimmPolicyPolicyWithLoRA.from_policy(self.cfg, self.ema_model)
+        # run_lora_on_obs_encoder = self.cfg.finetuning.apply_lora_on_obs_encoder
+        # self.ema_lora_model.inject_lora(run_lora_on_obs_encoder,lora_rank)
+        # self.ema_lora_model.freeze_main_network(run_lora_on_obs_encoder)
+        # self.ema_model = self.ema_lora_model
+        
+    def update_optimizer_parameters(self):
+        # Get the list of parameters that require gradients
+        trainable_params = list(filter(lambda p: p.requires_grad, self.lora_model.parameters()))
+        trainable_params_set = set(trainable_params)
+
+        # Update optimizer's parameter groups
+        optimizer_param_set = set()
+        for group in self.optimizer.param_groups:
+            optimizer_param_set.update(group['params'])
+
+        # Identify new parameters to add to the optimizer
+        new_params = [p for p in trainable_params if p not in optimizer_param_set]
+
+        # Remove parameters that no longer require gradients from optimizer param groups
+        for group in self.optimizer.param_groups:
+            group['params'] = [p for p in group['params'] if p.requires_grad and p in trainable_params_set]
+
+        # Add new parameters to the optimizer
+        if new_params:
+            self.optimizer.add_param_group({'params': new_params})
+
+        # Remove state for parameters that are no longer present
+        optimizer_state_params = set(self.optimizer.state.keys())
+        params_to_remove = optimizer_state_params - trainable_params_set
+        for param in params_to_remove:
+            del self.optimizer.state[param]
+
+    def update_scheduler(self, len_dataloader):
+        scheduler_state = self.lr_scheduler.state_dict()
+        self.lr_scheduler = get_scheduler(self.cfg.training.lr_scheduler,
+                                          optimizer=self.optimizer,
+                                          num_warmup_steps=self.cfg.training.lr_warmup_steps,
+                                          num_training_steps=(
+                                        len_dataloader * self.cfg.training.num_epochs) \
+                                            // self.cfg.training.gradient_accumulate_every,
+                                        #   last_epoch=self.global_step-1
+                                          )
+        self.lr_scheduler.load_state_dict(scheduler_state)
 
     def run(self):
         cfg = copy.deepcopy(self.cfg)
@@ -148,6 +237,9 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             init_kwargs={"wandb": wandb_cfg}
         )
 
+        self.start_training_time = time.time()
+        self.wall_clock_times = {'start': self.start_training_time}
+        
         # resume training
         # if cfg.training.resume:
         # if lastest_ckpt_path.is_file():
@@ -163,45 +255,13 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         dagger_episode_folder = cfg.finetuning.dagger_episode_folder
 
         original_dataset, merged_dataset, human_only_dataset = get_finetuning_dataset(task_name, dagger_episode_folder)
-        if cfg.finetuning.human_only:
-            cfg.task.dataset.human_path = human_only_dataset
-        else:
-            cfg.task.dataset.human_path = merged_dataset
-
-        if cfg.finetuning.use_only_original:
-            cfg.task.dataset.human_path = original_dataset
-
-        dataset = hydra.utils.instantiate(cfg.task.dataset)
-
-        # testing
-        # cfg.task.dataset.human_path = original_dataset
-        # original_dataset = hydra.utils.instantiate(cfg.task.dataset)
-
-        # og_img = original_dataset[100]['obs']['left_image'][0]
-        # # move channels to last dimension
-        # og_img = og_img.permute(1, 2, 0).numpy()
-        # plt.imshow(og_img)
         
-
-        # cfg.task.dataset.human_path = human_only_dataset
-        # human_only_dataset = hydra.utils.instantiate(cfg.task.dataset)
-
-        # ho_img = human_only_dataset[100]['obs']['left_image'][0]
-        # # move channels to last dimension
-        # ho_img = ho_img.permute(1, 2, 0).numpy()
-        # plt.imshow(ho_img)
-
-        self.start_training_time = time.time()
-        self.wall_clock_times = {'start': self.start_training_time}
-
-
-        # pdb.set_trace()
+        cfg.task.dataset.human_path = merged_dataset
+        dataset = hydra.utils.instantiate(cfg.task.dataset)
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
-
-        print('train dataset:', len(dataset), ', ' 'train dataloader:', len(train_dataloader))
-
+        
         # configure lr scheduler
-        lr_scheduler = get_scheduler(
+        self.lr_scheduler = get_scheduler(
             cfg.training.lr_scheduler,
             optimizer=self.optimizer,
             num_warmup_steps=cfg.training.lr_warmup_steps,
@@ -212,6 +272,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             # however huggingface diffusers steps it every batch
             last_epoch=self.global_step-1
         )
+        # pdb.set_trace()
 
         if cfg.finetuning.from_scratch is False:
             lastest_ckpt_path = cfg.ckpt_path
@@ -220,37 +281,20 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         else:
             accelerator.print(f"Training from scratch, no checkpoint loaded.")
 
-
-        # for parameter in self.model.parameters(): freeze all but the obs_encoder
-        # pdb.set_trace()
+        self.inject_low_rank_adapter_to_learner(len(train_dataloader))
         if cfg.finetuning.freeze_obs_encoder:
-            accelerator.print("Freezing obs_encoder parameters.")
-            for name, parameter in self.model.named_parameters():
+            accelerator.print("Freezing observation encoder.")
+            for name, parameter in self.lora_model.named_parameters():
                 if 'obs_encoder' in name:
                     parameter.requires_grad = False
-                    accelerator.print(f"Freezing parameter: {name}")
-                else:
-                    accelerator.print(f"Unfreezing parameter: {name}")
+                parameter.requires_grad = False # sanity check, remove this later
 
-        # Reset optimizer
-        obs_encorder_lr = cfg.optimizer.lr
-        obs_encorder_params = list()
-        for param in self.model.obs_encoder.parameters():
-            if param.requires_grad:
-                obs_encorder_params.append(param)
-        print(f'obs_encorder params: {len(obs_encorder_params)}')
-        param_groups = [
-            {'params': self.model.model.parameters()},
-            {'params': obs_encorder_params, 'lr': obs_encorder_lr}
-        ]
-        # self.optimizer = hydra.utils.instantiate(
-        #     cfg.optimizer, params=param_groups)
-        optimizer_cfg = OmegaConf.to_container(cfg.optimizer, resolve=True)
-        optimizer_cfg.pop('_target_')
-        self.optimizer = torch.optim.AdamW(
-            params=param_groups,
-            **optimizer_cfg
-        )
+        count_trainable_params = sum(p.numel() for p in self.lora_model.parameters() if p.requires_grad) 
+        print(f"Number of trainable parameters: {count_trainable_params} (should be zero)")
+
+        # don't use ema for lora for now
+        cfg.training.use_ema = False
+
 
         # configure ema
         ema: EMAModel = None
@@ -258,6 +302,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             ema = hydra.utils.instantiate(
                 cfg.ema,
                 model=self.ema_model)
+            
+        # self.inject_low_rank_adapter_to_learner(len(train_dataloader))
 
         # configure env
         env_runner: BaseImageRunner
@@ -292,12 +338,14 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         # optimizer_to(self.optimizer, device)
 
         # accelerator
-        train_dataloader, self.model, self.optimizer, lr_scheduler = accelerator.prepare(
-            train_dataloader, self.model, self.optimizer, lr_scheduler
+        train_dataloader, self.lora_model, self.optimizer, self.lr_scheduler = accelerator.prepare(
+            train_dataloader, self.lora_model, self.optimizer, self.lr_scheduler
         )
-        device = self.model.device
+        device = self.lora_model.device
+        self.lora_model.to(device)
         if self.ema_model is not None:
             self.ema_model.to(device)
+        optimizer_to(self.optimizer, device)
 
         # save batch for sampling
         train_sampling_batch = None
@@ -315,13 +363,13 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         log_path = os.path.join(self.output_dir, 'logs.json.txt')
         with JsonLogger(log_path) as json_logger:
             for local_epoch_idx in range(cfg.training.num_epochs):
-                self.model.train()
+                self.lora_model.train()
 
                 step_log = dict()
                 # ========= train for this epoch ==========
                 if cfg.training.freeze_encoder:
-                    self.model.obs_encoder.eval()
-                    self.model.obs_encoder.requires_grad_(False)
+                    self.lora_model.obs_encoder.eval()
+                    self.lora_model.obs_encoder.requires_grad_(False)
 
                 train_losses = list()
                 with tqdm.tqdm(train_dataloader, desc=f"Training epoch {self.epoch}", 
@@ -334,15 +382,23 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                         train_sampling_batch = batch
 
                         # compute loss
-                        raw_loss = self.model(batch)
+                        raw_loss = self.lora_model(batch)
                         loss = raw_loss / cfg.training.gradient_accumulate_every
-                        loss.backward()
+                        loss.backward() # TODO: comment this back in, this is just sanity check
+
+                        # Access gradients
+                        # for name, param in self.model.named_parameters():
+                        #     if param.grad is not None:
+                        #         print(f"Gradient for {name}")
+                        #     # else:
+                        #     #     print(f"No gradient for {name}")
+                        # pdb.set_trace()
 
                         # step optimizer
                         if self.global_step % cfg.training.gradient_accumulate_every == 0:
                             self.optimizer.step()
                             self.optimizer.zero_grad()
-                            lr_scheduler.step()
+                            self.lr_scheduler.step()
                         
                         # update ema
                         if cfg.training.use_ema:
@@ -356,7 +412,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                             'train_loss': raw_loss_cpu,
                             'global_step': self.global_step,
                             'epoch': self.epoch,
-                            'lr': lr_scheduler.get_last_lr()[0]
+                            'lr': self.lr_scheduler.get_last_lr()[0]
                         }
 
                         is_last_batch = (batch_idx == (len(train_dataloader)-1))
@@ -376,7 +432,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                 step_log['train_loss'] = train_loss
 
                 # ========= eval for this epoch ==========
-                policy = accelerator.unwrap_model(self.model)
+                policy = accelerator.unwrap_model(self.lora_model)
                 if cfg.training.use_ema:
                     policy = self.ema_model
                 policy.eval()
@@ -447,8 +503,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                         json.dump(self.wall_clock_times, f, indent=4)
 
                     # unwrap the model to save ckpt
-                    model_ddp = self.model
-                    self.model = accelerator.unwrap_model(self.model)
+                    model_ddp = self.lora_model
+                    self.lora_model = accelerator.unwrap_model(self.lora_model)
 
                     # checkpointing
                     if cfg.checkpoint.save_last_ckpt:
@@ -474,7 +530,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                     self.save_checkpoint(path=checkpoint_filename)
 
                     # recover the DDP model
-                    self.model = model_ddp
+                    self.lora_model = model_ddp
                 # ========= eval end for this epoch ==========
                 # end of epoch
                 # log of last step is combined with validation and rollout

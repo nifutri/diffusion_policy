@@ -24,7 +24,7 @@ import robocasa.utils.env_utils as EnvUtils
 import robomimic.utils.obs_utils as ObsUtils
 from robocasa.scripts.playback_dataset import get_env_metadata_from_dataset, get_env_from_dataset
 from diffusion_policy.common.robocasa_util import create_environment, create_eval_environment
-from robosuite.wrappers import DataCollectionWrapper, VisualizationWrapper
+from robosuite.wrappers import DataCollectionWrapper, VisualizationWrapper, DAggerDataCollectionWrapper
 # from robosuite.renderers import OpenCVRenderer
 import pdb
 import robosuite
@@ -248,6 +248,8 @@ class EvalRobocasaImageRunner(BaseImageRunner):
         print("rollout_idx", rollout_idx)
         self.robomimic_env = create_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
         # robomimic_env = create_eval_env(dataset_path=self.dataset_path, env_meta=self.env_meta, shape_meta=self.shape_meta)
+        # robomimic_env = DAggerDataCollectionWrapper(robomimic_env, dagger_dir)
+        self.robomimic_env = DAggerDataCollectionWrapper(self.robomimic_env, self.output_dir)
         # create filepath 
         # pdb.set_trace()
         filename = pathlib.Path(self.output_dir).joinpath(

@@ -166,7 +166,7 @@ def create_eval_env_modified(
 ):
     # controller_configs = load_controller_config(default_controller=controllers)   # somehow this line doesn't work for me
 
-    layout_and_style_ids = (layout_and_style_ids[id_selection],)
+    # layout_and_style_ids = (layout_and_style_ids[id_selection],)
 
     env_kwargs = dict(
         env_name=env_name,
@@ -181,13 +181,13 @@ def create_eval_env_modified(
         use_object_obs=True,
         use_camera_obs=True,
         camera_depths=False,
-        # seed=seed,
+        seed=seed,
         # renderer = 'mjviewer',
         # render_camera="robot0_agentview_left",
         obj_instance_split=obj_instance_split,
         generative_textures=generative_textures,
         randomize_cameras=randomize_cameras,
-        # layout_and_style_ids=layout_and_style_ids,
+        layout_and_style_ids=layout_and_style_ids,
         translucent_robot=False,
     )
     
@@ -235,7 +235,7 @@ TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/s
                            }
 
 
-class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
+class EvalRolloutsDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
 
@@ -271,8 +271,22 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
         cls = hydra.utils.get_class(self.payload_cfg._target_)
         workspace = cls(self.payload_cfg)
         workspace: BaseWorkspace
-        workspace.load_payload(payload, exclude_keys=None, include_keys=None)
-        policy = workspace.ema_model
+        # 
+        # workspace.load_payload(payload, exclude_keys=['model', 'ema_model', 'lr_scheduler', 'lora_model', 'ema_lora_model'], include_keys=None)
+        # pdb.set_trace()
+        # workspace.load_payload(payload, exclude_keys=['model', 'lr_scheduler'], include_keys=None)
+        workspace.load_payload(payload, exclude_keys=['model', 'ema_model', 'lr_scheduler'], include_keys=None)
+
+        # workspace.model.load_state_dict(payload['state_dicts']['model'])
+        # workspace.lora_model.load_state_dict(payload['state_dicts']['lora_model'])
+        # workspace.ema_lora_model.load_state_dict(payload['state_dicts']['ema_lora_model'])
+        # workspace.ema_lora_model.merge_lora_weights(False)
+        # pdb.set_trace()
+
+
+        # pdb.set_trace()
+        policy = workspace.lora_model
+        # policy = workspace.model
         policy.num_inference_steps = self.cfg.num_inference_steps
 
         self.device = torch.device('cuda')
@@ -575,9 +589,22 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
 
 
     def run(self):
+        successes = []
         for i in range(0,50):
             print(colored(f"Running experiment {i+1}/50", "green"))
-            self.run_single_idx(i)
+            is_success = self.run_single_idx(i)
+            successes.append(is_success)
+
+        total_success_rate = sum(successes) / len(successes)
+        print(colored(f"Total Success Rate: {total_success_rate * 100:.2f}%", "blue"))
+        # save to txt file in run_dir
+        with open(os.path.join(self.run_dir, "successes.txt"), "w") as f:
+            for i, success in enumerate(successes):
+                f.write(f"Experiment {i+1}: {'Success' if success else 'Failure'}\n")
+            # write total success rates
+        
+        with open(os.path.join(self.run_dir, "total_success_rate.txt"), "w") as f:
+            f.write(f"Total Success Rate: {total_success_rate * 100:.2f}%\n")
 
     def run_single_idx(self, idx):
         
@@ -636,7 +663,7 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
 
         environment_data['env_kwargs']['has_renderer'] = True
         environment_data['env_kwargs']["renderer"] = "mjviewer"
-        env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
+        env = create_eval_env_modified(env_name=task_name, seed=idx, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
         # pdb.set_trace()
 
         # Wrap this with visualization wrapper
@@ -650,7 +677,7 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
 
         # wrap the environment with data collection wrapper
         tmp_directory = self.run_dir
-        env = DataCollectionWrapper(env, tmp_directory)
+        env = DAggerDataCollectionWrapper(env, tmp_directory)
 
         # Make indicator sites fully transparent
         indicators = ['gripper0_right_grip_site', 'gripper0_right_grip_site_cylinder']
@@ -740,7 +767,8 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
             action_pred = action_pred[0:action_horizon]
 
             # compute scores
-            baseline_metric = logpZO_UQ(self.score_network, action_pred_infos_result['global_cond'])
+            # baseline_metric = logpZO_UQ(self.score_network, action_pred_infos_result['global_cond'])
+            baseline_metric = 0
 
             print(i)
             # pdb.set_trace()
@@ -759,13 +787,13 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
                 )  # concatenate horizontally
                 video_writer.append_data(video_img)
                 # update the matplotlib window with the new images
-                if i%10==0:
-                    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-                    axs[0].imshow(cam1)
-                    axs[1].imshow(cam2)
-                    axs[2].imshow(cam3)
-                    plt.savefig(f"{self.run_dir}/rollout{idx}_video_frame_{i}_{step}.png")
-                    plt.close()
+                # if i%10==0:
+                #     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+                #     axs[0].imshow(cam1)
+                #     axs[1].imshow(cam2)
+                #     axs[2].imshow(cam3)
+                #     plt.savefig(f"{self.run_dir}/rollout{idx}_video_frame_{i}_{step}.png")
+                #     plt.close()
                 if env._check_success():
                     break
 
@@ -835,7 +863,7 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
         # close renderer
         # env._renderer.close()
         env.close()
-        return 
+        return 1 if is_success else 0
 
 
 
