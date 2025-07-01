@@ -33,6 +33,7 @@ class DiffusionUnetTimmPolicyPolicyWithLoRA(DiffusionUnetTimmPolicy):
                 input_pertub=0.1,
                 inpaint_fixed_action_prefix=False,
                 train_diffusion_n_samples=1,
+                lora_scale=0.1,
                 # parameters passed to step
                 **kwargs
 
@@ -54,7 +55,8 @@ class DiffusionUnetTimmPolicyPolicyWithLoRA(DiffusionUnetTimmPolicy):
                 **kwargs)
  
         self.lora_dropout_p = 0.1
-        self.lora_scale = 1.0
+        self.lora_scale = lora_scale
+        print("LORA SCALE:", self.lora_scale)
 
         self.lora_injected = False
 
@@ -83,6 +85,7 @@ class DiffusionUnetTimmPolicyPolicyWithLoRA(DiffusionUnetTimmPolicy):
                    cond_predict_scale=cfg.policy.cond_predict_scale,
                    input_pertub=cfg.policy.input_pertub,
                    train_diffusion_n_samples=cfg.policy.train_diffusion_n_samples,
+                    lora_scale=cfg.finetuning.lora_scale,
                    # parameters passed to step 
                    **pretrained_policy.kwargs
                    )

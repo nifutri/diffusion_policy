@@ -121,7 +121,10 @@ class BaseWorkspace:
         # import pdb; pdb.set_trace()
         # [keyname for keyname, value in payload['state_dicts']['model']]
         for key, value in payload['state_dicts'].items():
+            print("key", key)
             if key not in exclude_keys:
+                # if key == 'lora_model':
+                #     pdb.set_trace()
                 self.__dict__[key].load_state_dict(value, **kwargs)
         for key in include_keys:
             if key in payload['pickles']:

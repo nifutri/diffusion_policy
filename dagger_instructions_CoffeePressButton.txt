@@ -47,15 +47,7 @@ CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --confi
 
 
 3. Evaluate your base policy - can merge this step with 6
-CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=eval_robocasa_base_policy task_name='OpenSingleDoor'
-CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=eval_robocasa_base_policy task_name='CoffeeServeMug'
-CUDA_VISIBLE_DEVICES=0 python evaluate.py --config-name=eval_robocasa_base_policy task_name='PnPSinkToCounter'
-
-
-Because of the rendering issue, I'm considering a much more onscreen, but slower approach.
-CUDA_VISIBLE_DEVICES=0 python evaluate.py --config-name=onscreen_eval_robocasa_base_policy task_name='OpenSingleDoor'
-CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=onscreen_eval_robocasa_base_policy task_name='CoffeeServeMug'
-CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=onscreen_eval_robocasa_base_policy task_name='PnPSinkToCounter'
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='base_policy' task_name='CoffeePressButton' dagger.ckpt_name='latest'
 
 
 

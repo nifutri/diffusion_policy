@@ -143,7 +143,62 @@ def render_camera_mujoco(env, camera_name, width=256, height=256, save_path=None
 
     return rgb
 
+
 def create_eval_env_modified(
+    env_name,
+    # robosuite-related configs
+    robots="PandaMobile",
+    controllers="OSC_POSE",
+    camera_names=[
+        "robot0_agentview_left",
+        "robot0_agentview_right",
+        "robot0_eye_in_hand",
+    ],
+    camera_widths=256,
+    camera_heights=256,
+    seed=None,
+    # robocasa-related configs
+    obj_instance_split="B",
+    generative_textures=None,
+    randomize_cameras=False,
+    layout_and_style_ids=((1, 1), (2, 2), (4, 4), (6, 9), (7, 10)),
+    controller_configs=None,
+    id_selection=None,
+):
+    # controller_configs = load_controller_config(default_controller=controllers)   # somehow this line doesn't work for me
+
+    # layout_and_style_ids = (layout_and_style_ids[id_selection],)
+
+    env_kwargs = dict(
+        env_name=env_name,
+        robots=robots,
+        controller_configs=controller_configs,
+        camera_names=camera_names,
+        camera_widths=camera_widths,
+        camera_heights=camera_heights,
+        has_renderer=False,
+        has_offscreen_renderer=True,
+        ignore_done=True,
+        use_object_obs=True,
+        use_camera_obs=True,
+        camera_depths=False,
+        seed=seed,
+        # renderer = 'mjviewer',
+        # render_camera="robot0_agentview_left",
+        obj_instance_split=obj_instance_split,
+        generative_textures=generative_textures,
+        randomize_cameras=randomize_cameras,
+        layout_and_style_ids=layout_and_style_ids,
+        translucent_robot=False,
+    )
+    
+
+    env = robosuite.make(**env_kwargs)
+
+    
+    return env
+
+def create_eval_env_modified_old(
     env_name,
     # robosuite-related configs
     robots="PandaMobile",
@@ -181,13 +236,13 @@ def create_eval_env_modified(
         use_object_obs=True,
         use_camera_obs=True,
         camera_depths=False,
-        # seed=seed,
+        seed=seed,
         # renderer = 'mjviewer',
         # render_camera="robot0_agentview_left",
         obj_instance_split=obj_instance_split,
         generative_textures=generative_textures,
         randomize_cameras=randomize_cameras,
-        # layout_and_style_ids=layout_and_style_ids,
+        layout_and_style_ids=layout_and_style_ids,
         translucent_robot=False,
     )
     
@@ -636,7 +691,7 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
 
         environment_data['env_kwargs']['has_renderer'] = True
         environment_data['env_kwargs']["renderer"] = "mjviewer"
-        env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
+        env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10, seed=idx)
         # pdb.set_trace()
 
         # Wrap this with visualization wrapper
@@ -650,7 +705,7 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
 
         # wrap the environment with data collection wrapper
         tmp_directory = self.run_dir
-        env = DataCollectionWrapper(env, tmp_directory)
+        env = DAggerDataCollectionWrapper(env, tmp_directory)
 
         # Make indicator sites fully transparent
         indicators = ['gripper0_right_grip_site', 'gripper0_right_grip_site_cylinder']
@@ -759,13 +814,13 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
                 )  # concatenate horizontally
                 video_writer.append_data(video_img)
                 # update the matplotlib window with the new images
-                if i%10==0:
-                    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-                    axs[0].imshow(cam1)
-                    axs[1].imshow(cam2)
-                    axs[2].imshow(cam3)
-                    plt.savefig(f"{self.run_dir}/rollout{idx}_video_frame_{i}_{step}.png")
-                    plt.close()
+                # if i%10==0:
+                #     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+                #     axs[0].imshow(cam1)
+                #     axs[1].imshow(cam2)
+                #     axs[2].imshow(cam3)
+                #     plt.savefig(f"{self.run_dir}/rollout{idx}_video_frame_{i}_{step}.png")
+                #     plt.close()
                 if env._check_success():
                     break
 

@@ -94,7 +94,7 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
-
+        print("loading from checkpoint", cfg.ckpt_path)
         payload = torch.load(open(cfg.ckpt_path, 'rb'), map_location='cpu', pickle_module=dill)
         self.payload_cfg = payload['cfg']
 

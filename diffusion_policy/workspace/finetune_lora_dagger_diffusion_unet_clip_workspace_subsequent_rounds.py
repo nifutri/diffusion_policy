@@ -106,7 +106,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
 
         # configure lora model
         self.lora_model = DiffusionUnetTimmPolicyPolicyWithLoRA.from_policy(cfg, self.model)
-        lora_rank = cfg.finetuning.lora_rank
+        lora_rank = 256
         run_lora_on_obs_encoder = cfg.finetuning.apply_lora_on_obs_encoder
         self.lora_model.inject_lora(run_lora_on_obs_encoder,lora_rank)
 
@@ -277,11 +277,13 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         if cfg.finetuning.from_scratch is False:
             lastest_ckpt_path = cfg.ckpt_path
             accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
-            self.load_checkpoint(path=lastest_ckpt_path)
+            self.load_checkpoint(path=lastest_ckpt_path, exclude_keys=['model'])
         else:
             accelerator.print(f"Training from scratch, no checkpoint loaded.")
 
-        self.inject_low_rank_adapter_to_learner(len(train_dataloader))
+        # self.inject_low_rank_adapter_to_learner(len(train_dataloader))
+        
+
         if cfg.finetuning.freeze_obs_encoder:
             accelerator.print("Freezing observation encoder.")
             for name, parameter in self.lora_model.named_parameters():
@@ -289,6 +291,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                     parameter.requires_grad = False
                 # parameter.requires_grad = False # sanity check, remove this later
 
+        self.update_optimizer_parameters()
         count_trainable_params = sum(p.numel() for p in self.lora_model.parameters() if p.requires_grad) 
         print(f"Number of trainable parameters: {count_trainable_params} (should be zero)")
 

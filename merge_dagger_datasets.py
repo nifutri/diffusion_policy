@@ -238,16 +238,16 @@ def main():
         dataset1_path = TASK_NAME_TO_HUMAN_PATH[task_name]
     else:
         dagger_meta_folder = f'data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_{task_name}/{dataset1}/processed_dagger_data'
-        dataset1_path = dagger_meta_folder + "/human_only_demo.hdf5"
+        dataset1_path = dagger_meta_folder + "/merged_dagger_data.hdf5"
 
     dagger_meta_folder = f'data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_{task_name}/{dataset2}/processed_dagger_data'
     dataset2_path = dagger_meta_folder + "/human_only_demo.hdf5"
 
-    # merge_h5_files_exact_dagger(dataset1_path, dataset2_path, f"{dagger_meta_folder}/merged_dagger_data.hdf5")
+    merge_h5_files_exact_dagger(dataset1_path, dataset2_path, f"{dagger_meta_folder}/merged_dagger_data.hdf5")
     summarize_h5_files(dataset1_path, dataset2_path)
-    # summarize_single_h5_file(f"{dagger_meta_folder}/merged_dagger_data.hdf5")
-    # analyze_dagger_experience(dagger_meta_folder, 50)
-    # visualize_h5_videos(f"{dagger_meta_folder}/merged_dagger_data.hdf5")
+    summarize_single_h5_file(f"{dagger_meta_folder}/merged_dagger_data.hdf5")
+    analyze_dagger_experience(dagger_meta_folder, 50)
+    visualize_h5_videos(f"{dagger_meta_folder}/merged_dagger_data.hdf5")
 
 
 

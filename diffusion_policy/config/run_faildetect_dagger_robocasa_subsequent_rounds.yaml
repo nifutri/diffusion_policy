@@ -6,7 +6,9 @@ task_name: test
 
 experiment_name: train_diffusion_unet_clip
 experiment_tag: ST_OOD_DAgger
-ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/checkpoints/latest.ckpt
+finetuning_tag: base_policy
+ckpt_epoch: epoch_300_step_20130
+ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/${finetuning_tag}/checkpoints/${ckpt_epoch}.ckpt
 
 
 name: ${experiment_name}
@@ -21,7 +23,7 @@ fail_detect:
   cp_band_path: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores/CP_band.pkl
 
 dagger:
-  round: 0
+  round: 1
   num_interactive_rollouts: 25
 
 num_inference_steps: 50
