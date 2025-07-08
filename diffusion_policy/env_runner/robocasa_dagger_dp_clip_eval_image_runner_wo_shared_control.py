@@ -1,5 +1,4 @@
 import os
-from unittest import result
 import wandb
 import numpy as np
 import torch
@@ -39,13 +38,9 @@ import json
 import matplotlib.pyplot as plt
 import time
 import pickle
-import asyncio
 import shutil
-import threading
-from pynput import keyboard
 # import cv2
 # import robocasa.utils.eval_utils as EvalUtils
-
 
 def create_interactive_eval_env_modified(
     env_name,
@@ -153,8 +148,6 @@ def logpZO_UQ(baseline_model, observation, action_pred = None, task_name = 'squa
         observation = observation + pred_v
         logpZO = observation.reshape(len(observation), -1).pow(2).sum(dim=-1)
     return logpZO
-
-
 
 
 class DAggerRobocasaImageRunner(BaseImageRunner):
@@ -295,24 +288,6 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         self.output_dir = output_dir
         self.adjusted_cp_band = None
         self.fig = None
-
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            threading.Thread(target=self.loop.run_forever, daemon=True).start()
-
-        self.listener = keyboard.Listener(on_press=self.on_press)
-        self.listener.start()
-
-        self.stop_flag = False
-
-    def on_press(self, key):
-        try:
-            if key.char == 'q':
-                self.stop_flag = True
-        except AttributeError:
-            pass  # handle special keys if needed
 
     def convert_observations(self, dataset, obs, clip_embedding):
 
@@ -857,8 +832,9 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
+    import asyncio
+
     async def predict_robot_action(self, obs, clip_embedding):
-        # print("entered predict_robot_action")
         batch = self.convert_observations(self.video_dataset, obs, clip_embedding)
         batch = {key: value.to(self.device, dtype=torch.float32) for key, value in batch.items()}
 
@@ -866,20 +842,16 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
         action_pred = ((action_pred.detach().cpu().numpy() + 1) / 2) * (self.video_dataset.max - self.video_dataset.min) + self.video_dataset.min
         action_pred = np.squeeze(action_pred)
         action_pred = np.hstack((action_pred, [[0, 0, 0, 0, -1]] * action_pred.shape[0]))
-        # action_horizon = 1
-        # action_pred = action_pred[0:action_horizon]
-        # print("during teleop action_pred", action_pred)
+        action_horizon = 1
+        action_pred = action_pred[0:action_horizon]
 
         baseline_metric = logpZO_UQ(self.score_network, action_pred_infos_result['global_cond'])
-        # print("during teleop LOG PZO", baseline_metric)
         bool_CP = 0
         thresh = self.CP_band[self.timestep] if self.timestep < len(self.CP_band) else self.CP_band[-1]
         if baseline_metric < thresh:
             bool_CP = 1
 
-        return action_pred, bool_CP, baseline_metric, action_pred_infos_result
-
-    
+        return action_pred, bool_CP, action_pred_infos_result
 
     def run_interactive_dagger_rollout(self, video_dataset, policy: BaseImagePolicy, score_network, CP_band, dagger_ep_idx, end_ep_idx):
         self.CP_band = CP_band
@@ -968,24 +940,11 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
             dagger_episode_meta['arbitration_to_robot'] = []
             dagger_episode_meta['robot_pred_during_teleop'] = []
             dagger_episode_meta['mixed_teleop_action'] = []
-            dagger_episode_meta['during_teleop_robot_predictions'] = []
-
-            # Save robot predictions during human teleop
-            self.during_teleop_robot_prediction_task = None
-            self.during_teleop_robot_action_chunk_prediction = None
-            self.current_chunk_timestep = 0
-            self.human_teleop_timestep = 0
-            self.num_mixing_timesteps = 0
-            self.current_bool_CP = 0
-            arbitration_to_robot = 0
 
             prev_score = 0
 
             while not done:
-                if self.stop_flag:
-                    print("Quitting loop...")
-                    break
-                    # Handle any switches in acting agent
+                # Handle any switches in acting agent
                 if acting_agent == 'human' and self.teleop_device.is_acting_agent is False:
                     # acting_agent = 'robot'
                     # env.env.env.set_dagger_acting_agent(acting_agent)
@@ -993,7 +952,6 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     # display_controller_cv2(new_controller)
                     dagger_episode_meta['switch_initiated_by'].append('human')
                     begin_mixing_on_human_handback = True
-                    self.num_mixing_timesteps = 0
                 elif acting_agent == 'robot' and self.teleop_device.is_acting_agent is True:
                     # pdb.set_trace()
                     num_human_segments += 1
@@ -1004,7 +962,6 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     new_controller = "Teleop Policy (Human)" if acting_agent=='human' else "Auto Policy (Robot)"
                     display_controller_cv2(new_controller)
                     human_segment_timestep = 0
-                    self.human_teleop_timestep = 0
                     robot_action_prediction = None
                     robot_action_prediction_obs_score = None
                     arbitration_to_robot = 0
@@ -1051,8 +1008,6 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     else:
                         nonzero_ac_seen = True
                         human_segment_timestep += 1
-                        self.human_teleop_timestep += 1
-                        self.current_chunk_timestep += 1
                         dagger_episode_meta['n_human_timesteps'] += 1
 
                     human_segment_to_length[human_segment_idx] += 1
@@ -1067,51 +1022,34 @@ class DAggerRobocasaImageRunner(BaseImageRunner):
                     env_action =  np.expand_dims(env_action, axis=0) # add time dimension
 
                     
-                    
+                    if begin_mixing_on_human_handback is True:
+                        # get robot action predictions
+                        batch = self.convert_observations(self.video_dataset, obs, clip_embedding)
+                        batch = {key: value.to(self.device, dtype=torch.float32) for key, value in batch.items()}
+                        action_pred, action_pred_infos_result = self.policy.predict_action_with_infos(batch)
+                        action_pred = ((action_pred.detach().cpu().numpy() + 1) / 2) * (self.video_dataset.max - self.video_dataset.min) + self.video_dataset.min
+                        action_pred = np.squeeze(action_pred)
+                        action_pred = np.hstack((action_pred, [[0, 0, 0, 0, -1]] * action_pred.shape[0]))
+                        action_horizon = 1
+                        action_pred = action_pred[0:action_horizon]
+                        robot_action_prediction = action_pred
+                        baseline_metric = logpZO_UQ(self.score_network, action_pred_infos_result['global_cond'])
+                        bool_CP = 0
+                        thresh = CP_band[self.timestep] if self.timestep < len(CP_band) else CP_band[-1]
+                        if baseline_metric < thresh:
+                            bool_CP = 1
+                        robot_action_prediction_obs_score = bool_CP
 
-                    # Step-wise loop
-                    if self.during_teleop_robot_prediction_task is None or self.human_teleop_timestep % 16 == 0:
-                        self.during_teleop_robot_prediction_task = asyncio.run_coroutine_threadsafe(
-                            self.predict_robot_action(obs, clip_embedding),
-                            self.loop
-                        )
-
-
-                    # Await and process prediction if ready
-                    if self.during_teleop_robot_prediction_task and self.during_teleop_robot_prediction_task.done():
-                        action_pred, bool_CP, baseline_metric, action_pred_infos_result = self.during_teleop_robot_prediction_task.result()
-                        self.during_teleop_robot_prediction_task = None  # Reset for future prediction
-
-                        # save current action chunk robot prediction
-                        self.during_teleop_robot_action_chunk_prediction = action_pred
-                        self.current_chunk_timestep = 0
-                        self.current_bool_CP = bool_CP
-                        dagger_episode_meta['during_teleop_robot_predictions'].append((action_pred, bool_CP, baseline_metric, self.timestep, self.human_teleop_timestep))
-
-                    arbitration_to_robot = 0
-                    if begin_mixing_on_human_handback is True and self.during_teleop_robot_action_chunk_prediction is not None and self.current_chunk_timestep < len(self.during_teleop_robot_action_chunk_prediction):
-                        current_action_pred = self.during_teleop_robot_action_chunk_prediction[self.current_chunk_timestep]
-                        l2_diff = np.linalg.norm(env_action - current_action_pred)
+                        l2_diff = np.linalg.norm(env_action - action_pred)
                         print("L2 diff between env_action and action_pred", l2_diff)
-
-                        arbitration_to_robot = 1 / (1 + np.exp(8 * (l2_diff - 1.0))) * self.current_bool_CP
-                        print("arbitration_to_robot", arbitration_to_robot)
-
-                        during_teleop_robot_action_prediction = current_action_pred
-
+                        arbitration_to_robot =  1/(1+np.exp(10*(l2_diff-1.0))) * robot_action_prediction_obs_score
                         dagger_episode_meta['arbitration_to_robot'].append(arbitration_to_robot)
-                        dagger_episode_meta['robot_pred_during_teleop'].append((current_action_pred, env_action, l2_diff, self.timestep, self.human_teleop_timestep, self.current_chunk_timestep, self.current_bool_CP))
+                        dagger_episode_meta['robot_pred_during_teleop'].append((action_pred, env_action, l2_diff, self.timestep))
 
-                        # Blend human and robot actions
-                        env_action = (1 - arbitration_to_robot) * env_action + arbitration_to_robot * during_teleop_robot_action_prediction
-                        self.num_mixing_timesteps += 1
-                        if self.num_mixing_timesteps >= 64:
-                            begin_mixing_on_human_handback = False
-                            self.num_mixing_timesteps = 0
-                            print("robot not ready for handover, handing back full control to human")
+                        print("arbitration_to_robot", arbitration_to_robot)
+                        env_action = (1 - arbitration_to_robot) * env_action + arbitration_to_robot * robot_action_prediction
+                    
                     dagger_episode_meta['mixed_teleop_action'].append((env_action, acting_agent, self.timestep, arbitration_to_robot))
-
-                    # Step the environment
 
                     # pdb.set_trace()
                     obs, _, _, _ = env.step(env_action)

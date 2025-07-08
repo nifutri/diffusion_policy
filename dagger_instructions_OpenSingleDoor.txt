@@ -1,0 +1,158 @@
+While an ideal DAgger continual learning system would simply run through a single script, 
+the long training times of diffusion policy and other imitation learning policies on an
+increasingly large set of demonstrations makes having a single script less than ideal for debugging.
+
+DAgger is thus run through a series of scripts.
+
+$ conda activate robocasa_diffusion_policy_umi
+
+0. Choose Task:
+PnPSinkToCounter: kitchen_pnp/PnPSinkToCounter/2024-04-26_2 
+OpenSingleDoor: kitchen_doors/OpenSingleDoor/2024-04-24 
+OpenDrawer: kitchen_drawer/OpenDrawer/2024-05-03 
+TurnOnStove: kitchen_stove/TurnOnStove/2024-05-02
+TurnOnSinkFaucet: kitchen_sink/TurnOnSinkFaucet/2024-04-25 
+CoffeePressButton: kitchen_coffee/CoffeePressButton/2024-04-25 
+CoffeeServeMug: kitchen_coffee/CoffeeServeMug/2024-05-01
+
+TurnOnMicrowave: kitchen_microwave/TurnOnMicrowave/2024-04-25
+CloseSingleDoor: kitchen_doors/CloseSingleDoor/2024-04-24 
+
+1. Replay the Robocasa dataset for your task to get 256x256 image observations, rather than 128x128.
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/{dataset filepath}/demo_gentex_im128_randcams.hdf5
+
+For the above tasks
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_drawer/OpenDrawer/2024-05-03/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_stove/TurnOnStove/2024-05-02/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeePressButton/2024-04-25/demo_gentex_im128_randcams.hdf5
+$ OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams.hdf5
+
+OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_microwave/TurnOnMicrowave/2024-04-25/demo_gentex_im128_randcams.hdf5
+OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/original_robocasa_dataset_states_to_obs.py --dataset ../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/CloseSingleDoor/2024-04-24/demo_gentex_im128_randcams.hdf5
+
+2. Training a base policy: (horizon 1)
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='OpenSingleDoor'
+
+
+
+
+3. Evaluate your base policy 
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='base_policy' task_name='OpenSingleDoor' dagger.ckpt_name='latest'
+
+
+
+4. Get obs encodings fpr FAIL-Detect
+CUDA_VISIBLE_DEVICES=2 python get_demo_obs_encodings.py --config-name=get_obs_embeds_robocasa task_name='OpenSingleDoor'
+
+
+
+5. Train FAIL-Detect Score Networks
+CUDA_VISIBLE_DEVICES=2 python train_fail_detect.py --config-name=train_fd_score_network_robocasa task.name='OpenSingleDoor'
+
+
+6. Use Score Networks to get observation scores on rollouts
+CUDA_VISIBLE_DEVICES=2 python score_rollouts.py --config-name=compute_fd_rollout_scores_robocasa task_name='OpenSingleDoor'
+
+
+TODO: make this flag the constant or time varying band
+7. Construct CP band from scores
+python get_band_from_scores_multitask.py OpenSingleDoor
+python get_band_from_scores_multitask.py CoffeeServeMug
+python get_band_from_scores_multitask.py PnPSinkToCounter
+python get_band_from_scores_multitask.py TurnOnStove
+python get_band_from_scores_multitask.py TurnOnSinkFaucet
+python get_band_from_scores_multitask.py CoffeePressButton
+
+
+7. Run DAgger Round 1
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='OpenSingleDoor' dagger.num_interactive_rollouts=75
+
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='OpenSingleDoor' dagger.round=1 dagger.num_interactive_rollouts=25
+8. Merge datafiles
+python merge_dagger_datasets.py --task_name OpenSingleDoor --dataset1 train --dataset2 dagger_episode_0
+
+9. Retraining
+
+SECTION 1. Finetuning on a Single Dataset file
+
+B. Finetune on Aggregated Data, all parameters updated
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='OpenSingleDoor' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.human_only=False finetuning.from_scratch=False
+
+
+C. Finetune on Aggregated Data, Freeze Observation encoder
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa.yaml training.seed=42 task.name='OpenSingleDoor' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.human_only=False finetuning.from_scratch=False finetuning.freeze_obs_encoder=True
+
+
+
+SECTION 3: LoRA Finetuning
+G. LoRA Finetuning Noise Predictor with Frozen Obs Encoder
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_lora_after_dagger_robocasa.yaml training.seed=42 task.name='OpenSingleDoor' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.apply_lora_on_obs_encoder=False finetuning.freeze_obs_encoder=True
+
+H. LoRA Finetuning Noise Predictor with Finetuned Obs Encoder
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_lora_after_dagger_robocasa.yaml training.seed=42 task.name='OpenSingleDoor' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.apply_lora_on_obs_encoder=False
+
+
+D. Finetuning with Orthogonal Projection
+
+
+E. Finetuning with DriftDAgger
+I may skip this, because the rank scheduler is over multiple demos being added in one by one, I've only got one batch here.
+
+
+10. Evaluate after finetuning
+Section 1: Evaluating all but LoRA
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='finetune_w_human_onlyTrue_from_base_after_dagger' task_name='CoffeePressButton' dagger.ckpt_name='latest'
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='finetune_w_human_onlyTrue_from_base_after_dagger' task_name='CoffeePressButton' dagger.ckpt_name='epoch_250_step_13972'
+
+Section 2: Evaluating LoRA Models specifically
+CUDA_VISIBLE_DEVICES=1 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='finetune_w_human_onlyTrue_from_base_after_dagger' task_name='CoffeePressButton' dagger.ckpt_name='epoch_250_step_13972'
+
+You can also run the bash scripts
+./run_all_eval1.sh
+./run_all_eval2.sh
+
+11. DAgger Episode 2 
+
+11a. Recalibrate CP band from dagger episode scores
+python get_recalibrated_band_from_scores_multitask.py OpenSingleDoor --dagger_episode=[0]
+
+
+HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa_subsequent_rounds task_name='CoffeePressButton' dagger.round=1 finetuning_tag='freeze_obs_encoder_dagger_episode_0_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' ckpt_epoch='epoch_280_step_18850'
+
+
+12. Merge with old data
+python merge_dagger_datasets.py --task_name CoffeePressButton --dataset1 dagger_episode_0 --dataset2 dagger_episode_1
+
+
+13. 
+B. Finetune on Aggregated Data, all parameters updated
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_1' finetuning.human_only=False finetuning.from_scratch=False finetuning_tag='dagger_episode_0_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' ckpt_epoch='epoch_280_step_18931'
+
+
+C. Finetune on Aggregated Data, Freeze Observation encoder
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_1' finetuning.human_only=False finetuning.from_scratch=False finetuning.freeze_obs_encoder=True finetuning_tag='freeze_obs_encoder_dagger_episode_0_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' ckpt_epoch='epoch_280_step_18850'
+
+
+SECTION 3: LoRA Finetuning
+G. LoRA Finetuning Noise Predictor with Frozen Obs Encoder
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.apply_lora_on_obs_encoder=False finetuning.freeze_obs_encoder=True
+
+H. LoRA Finetuning Noise Predictor with Finetuned Obs Encoder
+CUDA_VISIBLE_DEVICES=0 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeePressButton' finetuning.dagger_episode_folder='dagger_episode_0' finetuning.apply_lora_on_obs_encoder=True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

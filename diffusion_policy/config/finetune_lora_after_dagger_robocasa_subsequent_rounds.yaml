@@ -31,7 +31,8 @@ finetuning:
   apply_lora_on_obs_encoder: False
   freeze_obs_encoder: False
   lora_rank: 256
-  lora_scale: 1.0
+  lora_scale: 0.2
+  stop_at_epoch: 641
 
 policy:
   _target_: diffusion_policy.policy.diffusion_unet_clip_policy_lora.DiffusionUnetTimmPolicyPolicyWithLoRA

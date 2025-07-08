@@ -35,6 +35,8 @@ from diffusion_policy.env_runner.robocasa_dagger_dp_clip_eval_image_runner impor
 from diffusion_policy.failure_detection.UQ_baselines.CFM.net_CFM import get_unet
 import diffusion_policy.failure_detection.UQ_baselines.data_loader as data_loader
 import pickle
+import h5py
+from omegaconf import open_dict
 ## Get metrics
 def adjust_xshape(x, in_dim):
     total_dim = x.shape[1]
@@ -81,6 +83,22 @@ TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/s
                             'CoffeeServeMug': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams_im256.hdf5",
                            }
 
+def summarize_single_h5_file(file1_path):
+    def count_demos_and_transitions(h5file):
+        demo_keys = list(h5file['data'].keys())
+        num_demos = len(demo_keys)
+        total_transitions = 0
+        for key in demo_keys:
+            obs = h5file['data'][key]['obs']
+            first_obs_key = list(obs.keys())[0]
+            num_steps = obs[first_obs_key].shape[0]
+            total_transitions += num_steps
+        return num_demos, total_transitions
+
+    with h5py.File(file1_path, 'r') as f1:
+        demos1, transitions1 = count_demos_and_transitions(f1)
+
+    print(f"📁 {file1_path}: {demos1} demos, {transitions1} total transitions")
 
 class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
@@ -95,6 +113,7 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
         np.random.seed(seed)
         random.seed(seed)
         print("loading from checkpoint", cfg.ckpt_path)
+        self.cp_band_path = cfg.fail_detect.cp_band_path
         payload = torch.load(open(cfg.ckpt_path, 'rb'), map_location='cpu', pickle_module=dill)
         self.payload_cfg = payload['cfg']
 
@@ -103,18 +122,20 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
         # Read task name and configure human_path and tasks
         task_name = cfg.task_name
         self.task_name = task_name
-        self.payload_cfg.task.dataset.tasks = {
-            task_name: None,
-        }
-        self.payload_cfg.task.dataset.tasks = {task_name: None}
-        self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
-        cfg.task.env_runner.dataset_path = TASK_NAME_TO_HUMAN_PATH[task_name]
-
-        for key in self.payload_cfg.task.dataset.tasks:
-            self.payload_cfg.task.dataset.tasks[key] = {
-                "environment_file": cfg.environment_file,
-                "num_experiments": cfg.num_experiments
+        with open_dict(self.payload_cfg.task.dataset):
+            self.payload_cfg.task.dataset.tasks = {
+                task_name: None,
             }
+            
+            self.payload_cfg.task.dataset.tasks = {task_name: None}
+            self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
+            cfg.task.env_runner.dataset_path = TASK_NAME_TO_HUMAN_PATH[task_name]
+
+            for key in self.payload_cfg.task.dataset.tasks:
+                self.payload_cfg.task.dataset.tasks[key] = {
+                    "environment_file": cfg.environment_file,
+                    "num_experiments": cfg.num_experiments
+                }
 
         cls = hydra.utils.get_class(self.payload_cfg._target_)
         workspace = cls(self.payload_cfg)
@@ -133,7 +154,7 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
 
         self.run_dir = HydraConfig.get().run.dir
 
-        self.cp_band_path = cfg.fail_detect.cp_band_path
+        
         self.n_dagger_episodes = cfg.dagger.num_interactive_rollouts
 
         ## Get logpZO
@@ -187,23 +208,85 @@ class DAggerFDDiffusionUnetImageWorkspace(BaseWorkspace):
         # pdb.set_trace()
         self.env_runner = env_runner
 
+
+    def merge_single_h5_files(self, output_path):
+        # merge all files in self.env_runner.processed_dagger_dir
+        dagger_files = list(self.env_runner.processed_dagger_dir.glob('*.hdf5'))
+        if not dagger_files:
+            print("No DAgger files found to merge.")
+            return
+        with h5py.File(output_path, 'w') as out:
+            out.create_group('data')
+            for dagger_file in dagger_files:
+                if 'combined' in dagger_file.name:
+                    print(f"Skipping combined file: {dagger_file}")
+                    continue
+                with h5py.File(dagger_file, 'r') as f:
+                    # Copy all data from each DAgger file
+                    for key in f['data'].keys():
+                        new_key = f'demo_{len(out["data"])}'
+                        f.copy(f'data/{key}', out['data'], name=new_key)
+                    print(f"Copied {len(f['data'])} demos from {dagger_file}")
+        print(f"\n✅ Merged files saved to: {output_path}")
+        summarize_single_h5_file(output_path)
+
+        # merge and save first 25
+        dagger_files = dagger_files[:25]
+        first_25_output_path = output_path.replace('.hdf5', '_first_25.hdf5')
+        with h5py.File(first_25_output_path, 'w') as out:
+            out.create_group('data')
+            for dagger_file in dagger_files:
+                if 'combined' in dagger_file.name:
+                    print(f"Skipping combined file: {dagger_file}")
+                    continue
+                with h5py.File(dagger_file, 'r') as f:
+                    # Copy all data from each DAgger file
+                    for key in f['data'].keys():
+                        new_key = f'demo_{len(out["data"])}'
+                        f.copy(f'data/{key}', out['data'], name=new_key)
+                    print(f"Copied {len(f['data'])} demos from {dagger_file}")
+        print(f"\n✅ Merged first 25 files saved to: {first_25_output_path}")
+        summarize_single_h5_file(first_25_output_path)
+
+        # merge and save first 50
+        # dagger_files = dagger_files[25:50]
+        # first_50_output_path = output_path.replace('.hdf5', '_second_25.hdf5')
+        # with h5py.File(first_50_output_path, 'w') as out:   
+        #     out.create_group('data')
+        #     for dagger_file in dagger_files:
+        #         with h5py.File(dagger_file, 'r') as f:
+        #             # Copy all data from each DAgger file
+        #             for key in f['data'].keys():
+        #                 new_key = f'demo_{len(out["data"])}'
+        #                 f.copy(f'data/{key}', out['data'], name=new_key)
+        #             print(f"Copied {len(f['data'])} demos from {dagger_file}")
+        # print(f"\n✅ Merged first 50 files saved to: {first_50_output_path}")
+        # summarize_single_h5_file(first_50_output_path)
+
+
+
     def run(self):
         # self.env_runner.collect_dagger_rollout_data(None, None)
 
         # load cp band from pickle
+        # pdb.set_trace()
         with open(self.cp_band_path, 'rb') as f:
             cp_band = pickle.load(f)
 
         N_dagger_eps = self.n_dagger_episodes
 
+
         # run dagger rollout
-        for dagger_ep in range(N_dagger_eps):
+        for dagger_ep in range(12, N_dagger_eps):
 
             dagger_hdf5_path = self.env_runner.run_interactive_dagger_rollout(self.dataset, self.policy, self.score_network, cp_band, dagger_ep, N_dagger_eps-1)
             print(f"DAgger rollout {dagger_ep} completed, data saved to {dagger_hdf5_path}")
 
-
-
+        print(colored(f"DAgger rollouts completed for task {self.task_name}.", 'green'))
+        # merge all dagger files
+        merged_hdf5_path = self.run_dir + f"/processed_dagger_data/human_only_demo.hdf5"
+        self.merge_single_h5_files(merged_hdf5_path)
+        print(colored(f"DAgger rollouts merged to {merged_hdf5_path}.", 'green'))
 
 @hydra.main(
     version_base=None,

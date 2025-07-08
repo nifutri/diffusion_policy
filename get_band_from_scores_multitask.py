@@ -193,8 +193,8 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
     print(f'#### Number of training trajectories: {len(log_probs_train)}')
     print("#### Number of test trajectories: ", len(log_probs_test))
     print(f'#### Use {len(log_probs_train)} successful trajectories for calibration')
-    predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
-    # predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
+    # predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
+    predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
     if CPband:
         print(f'Number of success for mean {ntr} and for band {ncal}')
         # pdb.set_trace()

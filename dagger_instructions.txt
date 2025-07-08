@@ -103,7 +103,7 @@ HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-n
 HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='CoffeePressButton'
 HYDRA_FULL_ERROR=1 MUJOCO_GL=egl python dagger_interactive_rollout.py --config-name=run_faildetect_dagger_robocasa task_name='PnPSinkToCounter'
 
-Might want thism, but Don't need this anymore
+Might want this, but Don't need this anymore
 OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/dataset_states_to_obs.py --dataset data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/human_only_demo.hdf5
 OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python ../robocasa/robocasa/scripts/dataset_states_to_obs.py --dataset data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_CoffeePressButton/dagger_episode_0/processed_dagger_data/combined_demo.hdf5
 

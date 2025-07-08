@@ -597,9 +597,19 @@ class EvalRolloutsDiffusionUnetImageWorkspace(BaseWorkspace):
             for i, success in enumerate(successes):
                 f.write(f"Experiment {i+1}: {'Success' if success else 'Failure'}\n")
             # write total success rates
+
+        # standard error of success rate
+        standard_error = np.std(successes) / np.sqrt(len(successes))
         
         with open(os.path.join(self.run_dir, "total_success_rate.txt"), "w") as f:
             f.write(f"Total Success Rate: {total_success_rate * 100:.2f}%\n")
+        with open(os.path.join(self.run_dir, "standard_error.txt"), "w") as f:
+            f.write(f"Standard Error of Success Rate: {standard_error * 100:.2f}%\n")
+
+        # for ep_ folder in self.run_dir, delete folder
+        for folder in os.listdir(self.run_dir):
+            if folder.startswith("ep_"):
+                shutil.rmtree(os.path.join(self.run_dir, folder))
 
     def run_single_idx(self, idx):
         

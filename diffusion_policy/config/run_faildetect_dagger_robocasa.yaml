@@ -23,6 +23,7 @@ fail_detect:
 dagger:
   round: 0
   num_interactive_rollouts: 25
+  
 
 num_inference_steps: 50
 

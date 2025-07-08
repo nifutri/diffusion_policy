@@ -164,13 +164,15 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
     max_tr = 25 # these are used in CP construction
 
     # the training rollouts are further split in D_calibA (of size num_train), and D_calibB (of size num_cal)
-    num_train = int(max_tr/2)
-    num_cal = int(max_tr/2)
-    assert num_train + num_cal <= max_tr
+    
 
     # these are for constructing the CP band
-    log_probs_train = log_probs[:max_tr]
-    successes_train = successes[:max_tr]
+    log_probs_train = np.concatenate([log_probs[:max_tr],log_probs[max_tr+num_te:]], axis=0)
+    successes_train = np.concatenate([successes[:max_tr],successes[max_tr+num_te:]], axis=0)
+
+    num_train = int(len(log_probs_train)/2)
+    num_cal = int(len(log_probs_train)/2)
+    # assert num_train + num_cal <= max_tr
 
     # these are heldout for testing 
     log_probs_test = log_probs[max_tr:max_tr+num_te]
@@ -193,8 +195,8 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
     print(f'#### Number of training trajectories: {len(log_probs_train)}')
     print("#### Number of test trajectories: ", len(log_probs_test))
     print(f'#### Use {len(log_probs_train)} successful trajectories for calibration')
-    predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
-    # predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
+    # predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
+    predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
     if CPband:
         print(f'Number of success for mean {ntr} and for band {ncal}')
         # pdb.set_trace()
@@ -321,15 +323,15 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
             print("high value", global_indices_of_test[test_idx])
         else:
             print("low value", global_indices_of_test[test_idx])
-        observation_frames = img_frames[global_indices_of_test[test_idx]]
+        # observation_frames = img_frames[global_indices_of_test[test_idx]]
         
         CP_upper_band = target_traj
         for t in range(len(log_prob_test_scores)):
             if log_prob_test_scores[t] > CP_upper_band[t]:
-                if t < len(observation_frames):
-                    img= observation_frames[t]
-                else:
-                    img = observation_frames[-1]
+                # if t < len(observation_frames):
+                #     img= observation_frames[t]
+                # else:
+                #     img = observation_frames[-1]
                 # pdb.set_trace()
                 
                 if success == 0: # if failed, then correct detection
@@ -450,12 +452,20 @@ def main():
     parser.add_argument("task_name", type=str, help="Name of the task (e.g., closedrawer, openfridge)")
     parser.add_argument("--experiment_name", type=str, default="train_diffusion_unet_clip", required=False)
     parser.add_argument("--experiment_tag", type=str, default="ST_OOD_DAgger", required=False)
+    parser.add_argument("--dagger_episodes", type=list, default=[0], required=False)
     args = parser.parse_args()
 
     task_name = args.task_name
     experiment_name = args.experiment_name
     experiment_tag = args.experiment_tag
     policy_type = 'diffusion'
+    dagger_episodes = args.dagger_episodes
+    
+    # join string elements in dagger_episodes to construct list
+    dagger_episodes = [int(ep) for ep in dagger_episodes if ep.isdigit()]
+    print("dagger_episodes", dagger_episodes)
+    str_dagger_episodes = '-'.join([str(ep) for ep in dagger_episodes])
+    
     data_folder = f'data/outputs/{experiment_tag}_{experiment_name}_{task_name}/compute_rollout_scores'
     successes = []
     all_log_probs = []
@@ -505,7 +515,40 @@ def main():
             successes.append(success)
             all_images.append(img_frames)
 
-    
+    # add in dagger episodes
+    N_dagger_rollouts = 25
+    for dagger_ep in dagger_episodes:
+        dagger_folder = f'data/outputs/{experiment_tag}_{experiment_name}_{task_name}/dagger_episode_{dagger_ep}/dagger_data'
+        print("dagger_folder", dagger_folder)
+        for demo_num in range(N_dagger_rollouts):
+            dataset_path = dagger_folder + f'/dagger_episode_meta_{demo_num}.pkl'
+            try:
+                with open(dataset_path, "rb") as f:
+                    data = pickle.load(f)
+            except FileNotFoundError:
+                print(f"File not found: {dataset_path}")
+                continue
+            
+            scores = []
+            autonomous_success = True
+            for obs_idx in range(len(data['obs_list'])):
+                obs = data['obs_list'][obs_idx]
+                # pdb.set_trace()
+                # print("obs", len(obs))
+                if len(obs)==5:
+                    logpzo_score = obs[-3].detach().cpu().numpy()[0]
+                    scores.append(logpzo_score)
+                    actor = obs[-4]
+                else:
+                    autonomous_success = False
+                    break
+
+            if autonomous_success:
+                print(f"dagger episode {dagger_ep}, demo {demo_num} is successful")
+                success = 1 # dagger episodes are always successful
+                all_log_probs.append(scores)
+                successes.append(success)
+
 
     max_length = max(len(lp) for lp in all_log_probs)
     padded_log_probs = [lp + [lp[-1]] * (max_length - len(lp)) for lp in all_log_probs]
@@ -516,7 +559,10 @@ def main():
 
     print("log_probs shape:", log_probs.shape)
     print("successes shape:", successes.shape)
-
+    data_folder = f'data/outputs/{experiment_tag}_{experiment_name}_{task_name}/compute_rollout_scores_dagger_episode_{str_dagger_episodes}'
+    # create the folder if it does not exist
+    if not os.path.exists(data_folder):
+        os.makedirs(data_folder)
     get_detection_with_plot(log_probs, successes, all_images, data_folder, alpha=0.1)
     print("success rate = ", np.mean(successes))
 

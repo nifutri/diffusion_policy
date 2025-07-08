@@ -48,6 +48,7 @@ from robocasa.environments import ALL_KITCHEN_ENVIRONMENTS
 from robocasa.utils.env_utils import create_env, run_random_rollouts
 import numpy as np
 from copy import deepcopy
+from omegaconf import open_dict
 ## Get metrics
 def adjust_xshape(x, in_dim):
     total_dim = x.shape[1]
@@ -287,6 +288,8 @@ TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/s
                            'TurnOnSinkFaucet': "../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
                            'CoffeePressButton': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeePressButton/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
                             'CoffeeServeMug': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams_im256.hdf5",
+                            'TurnOnMicrowave': "../robocasa/datasets_first/v0.1/single_stage/kitchen_microwave/TurnOnMicrowave/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
+                            'CloseSingleDoor': "../robocasa/datasets_first/v0.1/single_stage/kitchen_doors/CloseSingleDoor/2024-04-24/demo_gentex_im128_randcams_im256.hdf5",
                            }
 
 
@@ -311,11 +314,11 @@ class EvalComputeFDScoresDiffusionUnetImageWorkspace(BaseWorkspace):
         # Read task name and configure human_path and tasks
         task_name = cfg.task_name
         self.task_name = task_name
-        self.payload_cfg.task.dataset.tasks = {
-            task_name: None,
-        }
-        self.payload_cfg.task.dataset.tasks = {task_name: None}
-        self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
+        with open_dict(self.payload_cfg.task.dataset):
+            self.payload_cfg.task.dataset.tasks = {
+                task_name: None,
+            }
+            self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
 
         for key in self.payload_cfg.task.dataset.tasks:
             self.payload_cfg.task.dataset.tasks[key] = {

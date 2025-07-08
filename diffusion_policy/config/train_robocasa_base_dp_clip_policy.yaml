@@ -156,23 +156,23 @@ checkpoint:
 #   run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 #   wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
 
-# hydra:
-#   job:
-#     override_dirname: ${experiment_tag}_${name}
-#   run:
-#     dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
-#   sweep:
-#     dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
-#     subdir: ${hydra.job.num}
-
 hydra:
   job:
     override_dirname: ${experiment_tag}_${name}
   run:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_from_scratch
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
   sweep:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_from_scratch
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
     subdir: ${hydra.job.num}
+
+# hydra:
+#   job:
+#     override_dirname: ${experiment_tag}_${name}
+#   run:
+#     dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_from_scratch
+#   sweep:
+#     dir: data/outputs/${experiment_tag}_${name}_${task_name}/finetune_from_scratch
+#     subdir: ${hydra.job.num}
 
 
     # merged_original_human_only

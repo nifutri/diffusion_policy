@@ -1,0 +1,51 @@
+#!/bin/bash
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeeServeMug' finetuning.dagger_episode_folder='dagger_episode_1' finetuning.human_only=False finetuning.from_scratch=False finetuning_tag='dagger_episode_0_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' ckpt_epoch='epoch_460'
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeeServeMug' finetuning.dagger_episode_folder='dagger_episode_1' finetuning.human_only=False finetuning.from_scratch=False finetuning.freeze_obs_encoder=True finetuning_tag='dagger_episode_0_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' ckpt_epoch='epoch_460'
+
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeeServeMug' finetuning.dagger_episode_folder='dagger_episode_1' finetuning.apply_lora_on_obs_encoder=False finetuning.freeze_obs_encoder=True finetuning_tag='dagger_episode_0_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' ckpt_epoch='epoch_460'
+
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python finetune.py --config-dir=. --config-name=finetune_after_dagger_robocasa_subsequent_rounds.yaml training.seed=42 task.name='CoffeeServeMug' finetuning.dagger_episode_folder='dagger_episode_1' finetuning.apply_lora_on_obs_encoder=False finetuning_tag='dagger_episode_0_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' ckpt_epoch='epoch_460'
+
+
+
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_480'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_500'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_520'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_540'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_560'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_580'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_600'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsTrue_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_620'
+
+
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_480'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_500'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_520'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_540'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_560'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_580'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_600'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_after_dagger_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_freezeobsFalse_finetune_w_human_onlyFalse_useonlyoriginalFalse_fromscratchFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_620'
+
+
+
+
+
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_480'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_500'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_520'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_540'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_560'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_580'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_600'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsFalse_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_620'
+
+
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_480'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_500'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_520'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_540'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_560'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_580'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_600'
+CUDA_VISIBLE_DEVICES=2 python evaluate.py --config-name=evaluate_lora_finetuning_robocasa dagger.ckpt_folder='dagger_episode_1_lora_rank256_scale0.2_freezeobsTrue_loraonobsFalse_after_dagger' task_name='CoffeeServeMug' dagger.ckpt_name='epoch_620'

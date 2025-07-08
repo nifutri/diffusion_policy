@@ -21,7 +21,7 @@ dagger:
   base_policy_ckpt_path: data/outputs/${experiment_tag}_${name}_${task_name}/${finetuning_tag}/checkpoints/${ckpt_epoch}.ckpt
   save_obs_embeds_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/obs_embeds.pt
   save_score_network_path: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy/fd_score_network.ckpt
-  cp_band_path: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores/CP_band.pkl
+  cp_band_path: data/outputs/${experiment_tag}_${name}_${task_name}/compute_rollout_scores_${finetuning.dagger_episode_folder}/CP_band.pkl
 
 
 finetuning:
@@ -30,6 +30,7 @@ finetuning:
   from_scratch: False
   use_only_original: False
   freeze_obs_encoder: False
+  stop_at_epoch: 641
 
 policy:
   _target_: diffusion_policy.policy.diffusion_unet_clip_policy.DiffusionUnetTimmPolicy

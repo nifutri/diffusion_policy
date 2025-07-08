@@ -524,12 +524,12 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                     # We can't copy the last checkpoint here
                     # since save_checkpoint uses threads.
                     # therefore at this point the file might have been empty!
-                    topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
+                    # topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
 
-                    if topk_ckpt_path is not None:
-                        self.save_checkpoint(path=topk_ckpt_path)
+                    # if topk_ckpt_path is not None:
+                    #     self.save_checkpoint(path=topk_ckpt_path)
 
-                    checkpoint_filename = f"{topk_manager.save_dir}/epoch_{self.epoch}_step_{self.global_step}.ckpt"
+                    checkpoint_filename = f"{topk_manager.save_dir}/epoch_{self.epoch}.ckpt"
                     self.save_checkpoint(path=checkpoint_filename)
 
                     # recover the DDP model
@@ -541,6 +541,9 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                 json_logger.log(step_log)
                 self.global_step += 1
                 self.epoch += 1
+                if self.epoch > cfg.finetuning.stop_at_epoch:
+                    accelerator.print(f"Stopping training at epoch {self.epoch} as per configuration.")
+                    break
 
         accelerator.end_training()
 
