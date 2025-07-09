@@ -395,6 +395,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             right_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
             gripper_image_queue = deque(maxlen=self.payload_cfg.task.img_obs_horizon)
             env = DataCollectionWrapper(env, directory=self.run_dir)
+            env.reset()
 
             for i in range(int(max_traj_len/action_horizon)):
 
