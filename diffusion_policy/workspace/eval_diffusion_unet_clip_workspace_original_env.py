@@ -376,7 +376,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             environment_data['env_kwargs']['has_renderer'] = True
             environment_data['env_kwargs']["renderer"] = "mjviewer"
             env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
-            pdb.set_trace()
+            # pdb.set_trace()
             # initial_state = environment_data['demos'][demo]['initial_state']
             # self.reset_to(env, initial_state)
 
