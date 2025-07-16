@@ -33,6 +33,7 @@ from robocasa.utils.dataset_registry import get_ds_path
 # import robocasa.utils.eval_utils
 from hydra.core.hydra_config import HydraConfig
 import matplotlib.pyplot as plt
+import h5py
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -48,7 +49,50 @@ TASK_NAME_TO_HUMAN_PATH = {'PnPCabToCounter': "../robocasa/datasets_first/v0.1/s
                            'TurnOnSinkFaucet': "../robocasa/datasets_first/v0.1/single_stage/kitchen_sink/TurnOnSinkFaucet/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
                            'CoffeePressButton': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeePressButton/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
                             'CoffeeServeMug': "../robocasa/datasets_first/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams_im256.hdf5",
+                            'TurnOnMicrowave': "../robocasa/datasets_first/v0.1/single_stage/kitchen_microwave/TurnOnMicrowave/2024-04-25/demo_gentex_im128_randcams_im256.hdf5",
                            }
+
+
+def summarize_single_h5_file(file1_path):
+    def count_demos_and_transitions(h5file):
+        demo_keys = list(h5file['data'].keys())
+        num_demos = len(demo_keys)
+        total_transitions = 0
+        for key in demo_keys:
+            # count the transitions here based on the actions!
+            actions = h5file['data'][key]['actions']
+            num_steps = actions.shape[0]
+            total_transitions += num_steps
+        return num_demos, total_transitions
+
+    with h5py.File(file1_path, 'r') as f1:
+        demos1, transitions1 = count_demos_and_transitions(f1)
+
+    print(f"📁 {file1_path}: {demos1} demos, {transitions1} total transitions")
+
+def merge_single_h5_files(input_files, output_path):
+    # merge all files in self.env_runner.processed_dagger_dir
+    if len(input_files)==0:
+        print 
+        print("No DAgger files found to merge.")
+        return
+    with h5py.File(output_path, 'w') as out:
+        counter = 0
+        tgt = out.create_group('data')
+        for dagger_file in input_files:
+            with h5py.File(dagger_file, 'r') as f:
+                if counter == 0:
+                    for key, value in f['data'].attrs.items():
+                        tgt.attrs[key] = value
+                counter += 1
+                # Copy all data from each DAgger file
+                for key in f['data'].keys():
+                    new_key = f'demo_{len(out["data"])}'
+                    f.copy(f'data/{key}', out['data'], name=new_key)
+                print(f"Copied {len(f['data'])} demos from {dagger_file}")
+    print(f"\n✅ Merged files saved to: {output_path}")
+    summarize_single_h5_file(output_path)
+
 
 def create_eval_env_modified(
     env_name,
@@ -73,7 +117,7 @@ def create_eval_env_modified(
 ):
     # controller_configs = load_controller_config(default_controller=controllers)   # somehow this line doesn't work for me
 
-    layout_and_style_ids = (layout_and_style_ids[id_selection],)
+    # layout_and_style_ids = (layout_and_style_ids[id_selection],) # eventually comment this in again,...
 
     env_kwargs = dict(
         env_name=env_name,
@@ -94,12 +138,12 @@ def create_eval_env_modified(
         obj_instance_split=obj_instance_split,
         generative_textures=generative_textures,
         randomize_cameras=randomize_cameras,
-        # layout_and_style_ids=layout_and_style_ids,
+        layout_and_style_ids=layout_and_style_ids, # was uncommented before - now comment in to make deterministic
         translucent_robot=False,
     )
 
     env = robosuite.make(**env_kwargs)
-    return env
+    return env, env_kwargs
 
 class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
@@ -125,6 +169,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             task_name: None,
         }
         self.payload_cfg.task.dataset.tasks = {task_name: None}
+
         self.payload_cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
 
         for key in self.payload_cfg.task.dataset.tasks:
@@ -335,6 +380,10 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             }
 
     def run(self):
+        hdf_5_demo_file_paths_success = []
+        video_file_paths_success = []
+        hdf_5_demo_file_paths_fail = []
+        video_file_paths_fail = []
 
         experiment_record = f"{self.run_dir}/multi_environment_experiment_record.json"
         experiment_record_lock = f"{experiment_record}.lock"
@@ -361,6 +410,9 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         # env = robosuite.make(**environment_data['env_kwargs'])
 
         demos = list(experiments_data['tasks'][task_name]['experiments'].keys())
+        # manually set here to only do 5 evals,...
+        # # TODO: maybe make some external arg passed in here
+        # demos = demos[:5]
 
         max_traj_len = self.cfg['max_traj_len']
         camera_names = environment_data['env_kwargs']['camera_names']   # ['robot0_agentview_left', 'robot0_agentview_right', 'robot0_eye_in_hand']
@@ -372,10 +424,15 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         for demo in demos:
 
             demo_number = int(demo.replace("demo_", ""))
-            
+
+            # basically keep running for longer to make sure we have anough data essentially also after we finish the task
+            succeeded = False
+            succeeded_timesteps = 0
+            succeeded_timestes_threshold = 16
+
             environment_data['env_kwargs']['has_renderer'] = True
             environment_data['env_kwargs']["renderer"] = "mjviewer"
-            env = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
+            env, env_kwargs = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
             # pdb.set_trace()
             # initial_state = environment_data['demos'][demo]['initial_state']
             # self.reset_to(env, initial_state)
@@ -398,6 +455,8 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             env.reset()
 
             for i in range(int(max_traj_len/action_horizon)):
+            # # TODO: maybe more "aggresive" limit on the horizon?!
+            # for i in range(int(10)):
 
                 video_img = []
                 visual_obs = env._get_observations()
@@ -462,13 +521,18 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
                     # plt.pause(0.00001)
 
                     if env._check_success():
-                        break
+                        succeeded = True
+                        succeeded_timesteps += 1
+                        if (succeeded_timesteps >= succeeded_timestes_threshold):
+                            break
                 
-                if env._check_success():
+                # if env._check_success():
+                #     break
+                if (succeeded_timesteps >= succeeded_timestes_threshold):
                     break
 
             experiments_data['tasks'][task_name]['experiments'][demo]['status'] = 'done'
-            if env._check_success():
+            if succeeded:
                 experiments_data['tasks'][task_name]['experiments'][demo]['success'] = 1
             else:
                 experiments_data['tasks'][task_name]['experiments'][demo]['success'] = 0
@@ -479,9 +543,76 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
             with lock:
                 self.update_json_file(experiment_record, experiments_data)
 
+            # maybe a bit hacky for now but eventually it works
+            current_ep_dir = env.ep_directory
             env.close()
 
+            # make a new timestamped directory
+            import time
+            import os
+            from robocasa.scripts.collect_demos import gather_single_demonstrations_as_hdf5
+            from robocasa.utils.robomimic.robomimic_dataset_utils import convert_to_robomimic_format
+            t1, t2 = str(time.time()).split(".")
+            new_dir = os.path.join(self.run_dir, "tmp_single_traj_hdf5_{}_{}".format(t1, t2))
+            os.makedirs(new_dir)
+
+            # eventually also convert the data to hdf5?!
+            hdf5_path = gather_single_demonstrations_as_hdf5(
+            current_ep_dir, new_dir, json.dumps(env_kwargs))
+            convert_to_robomimic_format(hdf5_path)
+            if (succeeded):
+                hdf_5_demo_file_paths_success.append(hdf5_path)
+                video_file_paths_success.append(video_path)
+            else:
+                hdf_5_demo_file_paths_fail.append(hdf5_path)
+                video_file_paths_fail.append(video_path)
+
+        # finally summarize the stats:
+        # create summary.txt file
+        summary_file_path = f"{self.run_dir}/summary.txt"
+        with open(summary_file_path, 'w') as summary_file:
+            summary_file.write(f"Task: {task_name}\n")
+            summary_file.write(f"Total Evals: {len(demos)}\n")
+            summary_file.write(f"Success Rate: {len(hdf_5_demo_file_paths_success) / float(len(demos))}\n")
+            summary_file.write(f"Successful Demos: {len(hdf_5_demo_file_paths_success)}\n")
+            summary_file.write(f"Failed Demos: {len(hdf_5_demo_file_paths_fail)}\n")
+            summary_file.write("\nSuccessful Demos (Video Names):\n")
+            for path in video_file_paths_success:
+                summary_file.write(f"{path}\n")
+            summary_file.write("\nFailed Demos (Video Names):\n")
+            for path in video_file_paths_fail:
+                summary_file.write(f"{path}\n")
+            for path in hdf_5_demo_file_paths_success:
+                summary_file.write(f"{path}\n")
+            summary_file.write("\nFailed Demos:\n")
+            for path in hdf_5_demo_file_paths_fail:
+                summary_file.write(f"{path}\n")
+
+        # finally merge all the hdf5 files into one
+        merge_single_h5_files(hdf_5_demo_file_paths_success, f"{self.run_dir}/merged_demos_success.hdf5")
+        # final finally remove the temporary directories
+        for hdf5_path in hdf_5_demo_file_paths_success:
+            if os.path.exists(hdf5_path[:-9]):
+                # remove folder with all the contents:
+                shutil.rmtree(hdf5_path[:-9])
+
+        # finally merge all the hdf5 files into one
+        merge_single_h5_files(hdf_5_demo_file_paths_fail, f"{self.run_dir}/merged_demos_fails.hdf5")
+        # final finally remove the temporary directories
+        for hdf5_path in hdf_5_demo_file_paths_fail:
+            if os.path.exists(hdf5_path[:-9]):
+                # remove folder with all the contents:
+                shutil.rmtree(hdf5_path[:-9])
+
+        print ("finished the evaluation!")
+
+
         pass
+
+
+
+
+# allows arbitrary python code execution in configs using the ${eval:''} resolver
 
 
 @hydra.main(
