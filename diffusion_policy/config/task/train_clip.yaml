@@ -58,7 +58,7 @@ dataset:
   action_dim: ${task.action_dim}
   swap_rgb: false
   mode: "train"
-  data_fraction: 0.5
+  data_fraction: 1.0 #0.5 # not sure why we were using only half of the data before
 
   lang_model: ${task.lang_model}
   human_path: "none"
