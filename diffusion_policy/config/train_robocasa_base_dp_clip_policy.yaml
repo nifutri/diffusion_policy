@@ -95,8 +95,8 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 48
-  num_workers: 24
+  batch_size: 48 #96 #48
+  num_workers: 24 #48 #24
   shuffle: True
   pin_memory: True
   persistent_workers: True
@@ -116,16 +116,16 @@ training:
   # optimization
   lr_scheduler: cosine
   lr_warmup_steps: 2000
-  num_epochs: 1000
+  num_epochs: 25 #1000
   gradient_accumulate_every: 1
   # EMA destroys performance when used with BatchNorm
   # replace BatchNorm with GroupNorm.
-  use_ema: True
+  use_ema: True #True
   freeze_encoder: False
   # training loop control
   # in epochs
   rollout_every: 0
-  checkpoint_every: 100
+  checkpoint_every: 5 #100
   val_every: 100
   sample_every: 5
   # steps per epoch
@@ -135,7 +135,7 @@ training:
   tqdm_interval_sec: 1.0
 
 logging:
-  project: clip
+  project: learning_from_failures_robocasa #clip
   resume: False
   mode: online
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
@@ -160,9 +160,9 @@ hydra:
   job:
     override_dirname: ${experiment_tag}_${name}
   run:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy_${now:%Y.%m.%d-%H.%M.%S}
   sweep:
-    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/base_policy_${now:%Y.%m.%d-%H.%M.%S}
     subdir: ${hydra.job.num}
 
 # hydra:
