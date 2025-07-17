@@ -135,7 +135,15 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         # Read task name and configure human_path and tasks
         task_name = cfg.task.name
         cfg.task.dataset.tasks = {task_name: None}
-        cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
+        # this here essentially sets the dataset path but I feel it should be done externally:
+        value = OmegaConf.select(cfg, "task.dataset.human_path")
+        if (value is None) or (value == "none"):
+        # if not OmegaConf.key_exists(cfg, "task.dataset.human_path"):
+            print ("now settin human path according to the spcifications inside the training config file")
+            print ("setting to: " + TASK_NAME_TO_HUMAN_PATH[task_name])
+            import time
+            time.sleep(30)
+            cfg.task.dataset.human_path = TASK_NAME_TO_HUMAN_PATH[task_name]
 
         # configure dataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
@@ -235,8 +243,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                         # device transfer
                         batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                         
-                        # always use the latest batch
-                        train_sampling_batch = batch
+                        # # always use the latest batch
+                        # train_sampling_batch = batch
 
                         # compute loss
                         raw_loss = self.model(batch)
