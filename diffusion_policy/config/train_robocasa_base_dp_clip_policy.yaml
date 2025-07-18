@@ -4,7 +4,8 @@ defaults:
 
 name: train_diffusion_unet_clip
 experiment_tag: ST_OOD_DAgger
-_target_: diffusion_policy.workspace.train_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
+# _target_: diffusion_policy.workspace.train_diffusion_unet_clip_workspace.TrainDiffusionUnetImageWorkspace
+_target_: diffusion_policy.workspace.train_diffusion_unet_clip_workspace_optimized.TrainDiffusionUnetImageWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -117,6 +118,7 @@ training:
   lr_scheduler: cosine
   lr_warmup_steps: 2000
   num_epochs: 25 #1000
+  lr_scheduler_epochs: ${training.num_epochs} # eventually allow to set a different number of epochs in case we want to resume,...
   gradient_accumulate_every: 1
   # EMA destroys performance when used with BatchNorm
   # replace BatchNorm with GroupNorm.
@@ -125,7 +127,7 @@ training:
   # training loop control
   # in epochs
   rollout_every: 0
-  checkpoint_every: 5 #100
+  checkpoint_every: 5 #1 #5 #100
   val_every: 100
   sample_every: 5
   # steps per epoch
@@ -133,6 +135,8 @@ training:
   max_val_steps: null
   # misc
   tqdm_interval_sec: 1.0
+  restore_accelerator: False
+  previous_accelerator_path: "/home/niklasfunk//Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_OpenSingleDoor/base_policy_2025.07.17-18.29.49/checkpoints/epoch_1_accelerator" # "checkpoints/step_10000" # eventually load accelerator here
 
 logging:
   project: learning_from_failures_robocasa #clip
@@ -143,11 +147,12 @@ logging:
   id: null
   group: null
 
+# # do not do top k - generates too much unnecessary checkoints,...
 checkpoint:
   topk:
     monitor_key: train_loss
     mode: min
-    k: 5
+    k: 0
     format_str: 'epoch={epoch:04d}-train_loss={train_loss:.3f}.ckpt'
   save_last_ckpt: True
   save_last_snapshot: False
