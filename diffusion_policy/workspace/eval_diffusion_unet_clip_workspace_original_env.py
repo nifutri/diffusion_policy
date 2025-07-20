@@ -157,6 +157,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
+        self.seed = seed
 
         payload = torch.load(open(cfg.ckpt_path, 'rb'), map_location='cpu', pickle_module=dill)
         self.payload_cfg = payload['cfg']
@@ -432,7 +433,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
 
             environment_data['env_kwargs']['has_renderer'] = True
             environment_data['env_kwargs']["renderer"] = "mjviewer"
-            env, env_kwargs = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10)
+            env, env_kwargs = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10, seed=self.seed)
             # pdb.set_trace()
             # initial_state = environment_data['demos'][demo]['initial_state']
             # self.reset_to(env, initial_state)
