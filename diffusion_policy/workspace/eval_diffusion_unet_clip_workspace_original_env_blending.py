@@ -427,6 +427,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
         pred_horizon = self.payload_cfg.task['action_horizon']
         action_horizon = self.cfg['execution_horizon']
 
+        local_counter = 0
         for demo in demos:
 
             demo_number = int(demo.replace("demo_", ""))
@@ -438,7 +439,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
 
             environment_data['env_kwargs']['has_renderer'] = True
             environment_data['env_kwargs']["renderer"] = "mjviewer"
-            env, env_kwargs = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10, seed=self.seed)
+            env, env_kwargs = create_eval_env_modified(env_name=task_name, controller_configs=environment_data['env_kwargs']['controller_configs'], id_selection=demo_number//10, seed=(self.seed+local_counter))
             # pdb.set_trace()
             # initial_state = environment_data['demos'][demo]['initial_state']
             # self.reset_to(env, initial_state)
@@ -546,6 +547,7 @@ class EvalDiffusionUnetImageWorkspace(BaseWorkspace):
 
             print(colored(f"Saved video to {video_path}", "green"))
             video_writer.close()
+            local_counter += 1
 
             with lock:
                 self.update_json_file(experiment_record, experiments_data)
