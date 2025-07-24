@@ -1,0 +1,49 @@
+
+experiment_name: train_diffusion_unet_clip
+experiment_tag: ST_OOD_DAgger
+
+task_name: test # to be set by command line
+
+name: train_diffusion_unet_clip
+_target_: diffusion_policy.workspace.eval_diffusion_unet_clip_workspace_original_env_blending.EvalDiffusionUnetImageWorkspace
+
+num_inference_steps: 50
+num_rollouts: 50
+
+environment_file: "demo_gentex_im128_randcams_100_mg_envs.pkl"
+# environment_file: "demo_gentex_im256_randcams_100_train_envs.pkl"
+num_experiments: 50
+
+execution_horizon: 16
+
+number_of_tasks: 50
+max_traj_len: 750 #1000
+dataset_mode: "test"
+
+
+proposal_policy_ckpt_path: data/outputs/${experiment_tag}_${experiment_name}_${task_name}/base_policy/checkpoints/latest.ckpt
+bad_policy_ckpt_path: data/outputs/${experiment_tag}_${experiment_name}_${task_name}/base_policy/checkpoints/latest.ckpt
+
+blending_policy:
+  _target_: diffusion_policy.policy.base_blending_policy.SampleBasedNoEMABlending
+  proposal_policy: ${proposal_policy_ckpt_path}
+  bad_policy: ${bad_policy_ckpt_path}
+  blending_horizon: ${execution_horizon}
+  num_proposals: 25
+  pos_cropping: 0.1
+  rot_cropping: 0.05
+  pos_weighting_good_bad: 10.0
+  rot_weighting_good_bad: 1.0
+  pos_weighting_good_good: 1.0
+  rot_weighting_good_good: 0.1
+  greedy_behavior: 1 #1
+  policy_inference_steps: ${num_inference_steps}
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/eval_base_policy
+  sweep:
+    dir: data/outputs/${experiment_tag}_${name}_${task_name}/eval_base_policy
+    subdir: ${hydra.job.num}

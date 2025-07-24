@@ -11,23 +11,29 @@ robocasa_directory = os.path.join(home_path, "Code_robocasa", "robocasa_dagger",
 # now define some hyperaprameters:
 
 initial_failure_file = f'{home_path}/Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_OpenSingleDoor/eval_base_policy/merged_demos_fails_im256.hdf5'
+initial_failure_file = f'{home_path}/Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_TurnOnMicrowave/eval_base_policy/merged_demos_fails_im256.hdf5'
 # initial_failure_file = None
+human_data_path = f'{home_path}/Code_robocasa/robocasa_dagger/robocasa/datasets_first/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams_im256.hdf5'
+human_data_path = f'{home_path}/Code_robocasa/robocasa_dagger/robocasa/datasets_first/v0.1/single_stage/kitchen_microwave/TurnOnMicrowave/2024-04-25/demo_gentex_im128_randcams_im256.hdf5'
 
 initialization = True
 num_epochs = 50
 # proposal_policy_path = '/home/niklasfunk/Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_OpenSingleDoor/base_policy_2025.07.16-14.28.53/checkpoints/latest.ckpt'
 proposal_policy_path = f'{home_path}/Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/PreTrainedModels/OpenSingleDoor/latest.ckpt'
+proposal_policy_path = f'{home_path}/Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/PreTrainedModels/TurnOnMicrowave/latest.ckpt'
+# proposal_policy_path = f'{home_path}/Code_robocasa/robocasa_dagger/diffusion_policy/data/outputs/ST_OOD_DAgger_train_diffusion_unet_clip_discriminator_OpenSingleDoor/base_policy_2025.07.20-17.54.53/checkpoints/latest.ckpt'
+
 # for initial policy configuration the bad policy is equal to the proposal policy
 bad_policy_path = proposal_policy_path
 
 
 num_epochs_iterative_procedure = 50
-num_rollouts = 10
-cuda_device = 0
+num_rollouts = 15 #15
+cuda_device = 1
 pos_cropping = 0.1
 rot_cropping = 0.1
-num_epochs = 40 # 25
-num_epochs_post_init = 10
+num_epochs = 25 #40 # 25
+num_epochs_post_init = 10 #10
 lr_scheduler_epochs = 250
 batch_size = 48
 num_workers = 24
@@ -46,11 +52,9 @@ for i in range(num_epochs_iterative_procedure):
     curr_folder_tmp = os.path.join(output_dir, f"epoch_{i+1}")
     os.makedirs(curr_folder_tmp, exist_ok=True)
     # Step 1: evaluate the current policy:
-    cmd = f"CUDA_VISIBLE_DEVICES={cuda_device} python evaluate.py --config-name=eval_robocasa_base_policy_blending proposal_policy_ckpt_path={proposal_policy_path} bad_policy_ckpt_path={bad_policy_path} blending_policy.pos_cropping={pos_cropping} blending_policy.rot_cropping={rot_cropping} num_rollouts={num_rollouts}"
-    if initialization:
+    cmd = f"CUDA_VISIBLE_DEVICES={cuda_device} python evaluate.py --config-name=eval_robocasa_base_policy_blending_simple proposal_policy_ckpt_path={bad_policy_path} bad_policy_ckpt_path={bad_policy_path} num_rollouts={num_rollouts}"
+    if True:
         cmd += f" blending_policy.greedy_behavior=1"
-    else:
-        cmd += f" blending_policy.greedy_behavior=0"
     # finally append the output directory location
     cmd += f" hydra.run.dir={curr_folder_tmp}"
 
@@ -81,7 +85,7 @@ for i in range(num_epochs_iterative_procedure):
             initial_failure_file = f"{curr_folder_tmp}/merged_demos_fails_im256_complete.hdf5"
 
     # now actually run the training:
-    cmd = f"CUDA_VISIBLE_DEVICES={cuda_device} python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name='OpenSingleDoor' task.dataset.human_path={initial_failure_file} training.num_epochs={num_epochs} hydra.run.dir={curr_folder_tmp}  dataloader.batch_size={batch_size} dataloader.num_workers={num_workers}"
+    cmd = f"CUDA_VISIBLE_DEVICES={cuda_device} python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy_discriminator_policy.yaml training.seed=42 task.name='OpenSingleDoor' task.dataset.human_path={human_data_path} bad_human_path={initial_failure_file} training.num_epochs={num_epochs} hydra.run.dir={curr_folder_tmp}  dataloader.batch_size={batch_size} dataloader.num_workers={num_workers}"
     if initialization:
         cmd += f" training.lr_scheduler_epochs={lr_scheduler_epochs} training.restore_accelerator=False"
     if not initialization:

@@ -57,6 +57,76 @@ class BaseBlendingPolicy(ModuleAttrMixin):
     def reset(self):
         pass
 
+
+
+class SampleBasedNoEMABlending(BaseBlendingPolicy):
+    def __init__(self, 
+        proposal_policy,
+        bad_policy,
+        blending_horizon=8,
+        num_proposals=25,
+        pos_cropping=0.02,
+        rot_cropping=0.02,
+        pos_weighting_good_bad=1.0,
+        rot_weighting_good_bad=0.1,
+        pos_weighting_good_good=1.0,
+        rot_weighting_good_good=0.1,
+        greedy_behavior=1,
+        policy_inference_steps=50,
+        # parameters passed to step
+        **kwargs
+    ):
+        super().__init__()
+
+        self.blending_horizon = blending_horizon
+        self.num_proposals = num_proposals
+        self.pos_cropping = pos_cropping
+        self.rot_cropping = rot_cropping
+        self.greedy_behavior = greedy_behavior
+
+        self.pos_weighting_good_bad = pos_weighting_good_bad
+        self.rot_weighting_good_bad = rot_weighting_good_bad
+        self.pos_weighting_good_good = pos_weighting_good_good
+        self.rot_weighting_good_good = rot_weighting_good_good
+
+        device = torch.device('cuda')
+
+        # first load the proposal policy:
+        payload_proposal_policy = torch.load(open(proposal_policy, 'rb'), map_location='cpu', pickle_module=dill)
+        payload_proposal_cfg = payload_proposal_policy['cfg']
+
+        cls = hydra.utils.get_class(payload_proposal_cfg._target_)
+        workspace = cls(payload_proposal_cfg)
+        workspace: BaseWorkspace
+        workspace.load_payload(payload_proposal_policy, exclude_keys=None, include_keys=None)
+        policy = workspace.model
+        policy.num_inference_steps = policy_inference_steps
+
+        policy.eval().to(device)
+        self.proposal_policy = policy
+
+        # # then load the bad policy
+        # payload_bad_policy = torch.load(open(bad_policy, 'rb'), map_location='cpu', pickle_module=dill)
+        # payload_bad_cfg = payload_bad_policy['cfg']
+        # cls = hydra.utils.get_class(payload_bad_cfg._target_)
+        # workspace = cls(payload_proposal_cfg)
+        # workspace: BaseWorkspace
+        # workspace.load_payload(payload_bad_policy, exclude_keys=None, include_keys=None)
+        # bad_policy = workspace.ema_model
+        # bad_policy.num_inference_steps = policy_inference_steps
+        # bad_policy.eval().to(device)
+        # self.bad_policy = bad_policy
+
+    def set_dataset_info(self, dataset_info):
+        # this is done to make sure that we can normalize, etc,...
+        self.dataset_info = dataset_info
+
+    def predict_action(self, obs):
+                
+        # we use the proposal policy to get the action
+        action_pred = self.proposal_policy.predict_action(obs)
+        action_pred = ((action_pred.detach().cpu().numpy() + 1) / 2) * (self.dataset_info.max - self.dataset_info.min) + self.dataset_info.min
+        return np.squeeze(action_pred)
     
 
 class SampleBasedBlending(BaseBlendingPolicy):
@@ -191,3 +261,100 @@ class SampleBasedBlending(BaseBlendingPolicy):
             action_pred = proposal_actions[arg_max_dist,...]
             return np.squeeze(action_pred)
         
+
+
+
+class ValueBasedBlending(BaseBlendingPolicy):
+    def __init__(self, 
+        proposal_policy,
+        value_policy,
+        blending_horizon=8,
+        num_proposals=25,
+        pos_cropping=0.02,
+        rot_cropping=0.02,
+        pos_weighting_good_bad=1.0,
+        rot_weighting_good_bad=0.1,
+        pos_weighting_good_good=1.0,
+        rot_weighting_good_good=0.1,
+        greedy_behavior=1,
+        policy_inference_steps=50,
+        # parameters passed to step
+        **kwargs
+    ):
+        super().__init__()
+
+        self.blending_horizon = blending_horizon
+        self.num_proposals = num_proposals
+        self.pos_cropping = pos_cropping
+        self.rot_cropping = rot_cropping
+        self.greedy_behavior = greedy_behavior
+
+        self.pos_weighting_good_bad = pos_weighting_good_bad
+        self.rot_weighting_good_bad = rot_weighting_good_bad
+        self.pos_weighting_good_good = pos_weighting_good_good
+        self.rot_weighting_good_good = rot_weighting_good_good
+
+        device = torch.device('cuda')
+
+        # first load the proposal policy:
+        payload_proposal_policy = torch.load(open(proposal_policy, 'rb'), map_location='cpu', pickle_module=dill)
+        payload_proposal_cfg = payload_proposal_policy['cfg']
+
+        cls = hydra.utils.get_class(payload_proposal_cfg._target_)
+        workspace = cls(payload_proposal_cfg)
+        workspace: BaseWorkspace
+        workspace.load_payload(payload_proposal_policy, exclude_keys=None, include_keys=None)
+        policy = workspace.ema_model
+        policy.num_inference_steps = policy_inference_steps
+
+        policy.eval().to(device)
+        self.proposal_policy = policy
+
+        if self.greedy_behavior != 1:
+            # then load the bad policy
+            payload_value_policy = torch.load(open(value_policy, 'rb'), map_location='cpu', pickle_module=dill)
+            payload_value_cfg = payload_value_policy['cfg']
+            cls = hydra.utils.get_class(payload_value_cfg._target_)
+            workspace = cls(payload_value_cfg)
+            workspace: BaseWorkspace
+            workspace.load_payload(payload_value_policy, exclude_keys=None, include_keys=None)
+            # important here: use the normal model as the value based policy does not have any ema implementation,....
+            value_policy = workspace.model
+            value_policy.num_inference_steps = policy_inference_steps
+            value_policy.eval().to(device)
+            self.value_policy = value_policy
+
+    def set_dataset_info(self, dataset_info):
+        # this is done to make sure that we can normalize, etc,...
+        self.dataset_info = dataset_info
+
+    @torch.no_grad()
+    def predict_action(self, obs):
+        if self.greedy_behavior != 1 and self.num_proposals > 1:
+            # we need to increase along the batch dimension
+            for key in obs:
+                if obs[key].ndim == 3:
+                    obs[key] = obs[key].repeat(self.num_proposals, 1, 1)
+                elif obs[key].ndim == 4:
+                    obs[key] = obs[key].repeat(self.num_proposals, 1, 1, 1)
+                elif obs[key].ndim == 5:
+                    obs[key] = obs[key].repeat(self.num_proposals, 1, 1, 1, 1)
+                else:
+                    raise ValueError(f"Unsupported observation dimension: {obs[key].ndim} for key {key}")
+                
+        if self.greedy_behavior == 1:
+            # we use the proposal policy to get the action
+            action_pred = self.proposal_policy.predict_action(obs)
+            action_pred = ((action_pred.detach().cpu().numpy() + 1) / 2) * (self.dataset_info.max - self.dataset_info.min) + self.dataset_info.min
+            return np.squeeze(action_pred)
+        
+        else:
+            proposal_actions = self.proposal_policy.predict_action(obs)
+            proposal_actions = ((proposal_actions.detach().cpu().numpy() + 1) / 2) * (self.dataset_info.max - self.dataset_info.min) + self.dataset_info.min
+            action_quality = self.value_policy.evaluate_action(obs, actions=proposal_actions)
+            
+            # select the action
+            arg_max_action = torch.argmax(action_quality, dim=0)
+            action_pred = proposal_actions[arg_max_action,...]
+
+            return np.squeeze(action_pred)
